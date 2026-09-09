@@ -1,39 +1,106 @@
-# ETL
+# ETL — the data layer
 
-Turns raw nflverse data into the static JSON the app reads.
+Converts raw nflverse data into the small, typed static JSON the frontend reads.
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python build_data.py --clean    # writes ../public/data
-.venv/bin/python validate.py              # checks output against the TS contract
+.venv/bin/python validate.py              # enforces the TS contract
 ```
 
-Run both from the repo root. `build_data.py` takes `--seasons` and `--out`.
+Run both from the repo root.
 
-## Notes on the data
+## Output
 
-Things that cost time to discover, kept here so they don't have to be rediscovered:
+```
+public/data/
+  teams-index.json       1 file    league dashboard, current season
+  games-index.json       1 file    every game, all six seasons
+  team/<TEAM_ID>.json    32 files  roster, depth chart, draft, stats, games
+  game/<GAME_ID>.json    1693      the replay fuel
+```
+
+The **team layer covers the most recent season in range (2025)**; `lastSeason` is the
+regular-season record of the year before it (2024). The **game layer spans all six seasons**, so
+every replay from 2020 onward is reachable from the game browser.
+
+## The key-play rule
+
+`isKeyPlay` is true when **any** of these hold — all thresholds are constants at the top of
+`build_data.py`:
+
+1. the home win probability moved at least `KEY_PLAY_WP_SWING` (0.10) from the previous play
+2. the play scored a touchdown
+3. the play was a turnover (interception or lost fumble)
+4. the play was a made field goal
+
+Rule 1 catches drama the box score misses, like a stop on 4th and goal. Rules 2–4 guarantee every
+score and giveaway is marked even in a blowout where the needle no longer moves. This flags about
+**9.5% of plays**, averaging 15 per game.
+
+## What `clockSeconds` means
+
+**Seconds remaining in `quarter`, counting down.** 900 at the start of a regulation quarter, 600 at
+the start of overtime, 0 at its end. It is _not_ elapsed time and _not_ whole-game time.
+
+For a whole-game timeline axis, derive elapsed seconds:
+
+```
+quarter <= 4 -> (quarter - 1) * 900 + (900 - clockSeconds)
+quarter >= 5 -> 3600 + (quarter - 5) * 600 + (600 - clockSeconds)
+```
+
+Whole-game time is deliberately _not_ stored, to keep game files to the contract's fields only.
+
+## Missing-data decisions
+
+- Optional contract fields (`number?`, `age?`, `college?`, `status?`, `down?`, `distance?`, `epa?`)
+  are **omitted entirely** when unknown. `null` does not satisfy `number | undefined` under strict
+  TypeScript, so an absent key is the only encoding that typechecks.
+- Required string fields fall back to `""`, never `null` — a few draft picks have no listed
+  position or college.
+- Required stat fields fall back to `0` when a team has no qualifying plays.
+- `NaN` and `Infinity` are converted to `None` on the way out, and `json.dumps(allow_nan=False)`
+  makes any survivor a hard build error rather than invalid JSON.
+- `homeWinProb` is clamped to 0..1.
+- `age` is computed against September 1 of the season, and rejected outside 15–60.
+
+## Dataset quirks worth knowing
+
+Things that cost real time to discover:
 
 - **`nflreadpy`, not `nfl_data_py`.** The blueprint names `nfl_data_py`, but it is deprecated
   upstream and pins `pandas<2`/`numpy<2`, neither of which has a Python 3.12 wheel — it cannot
-  install on a current interpreter. `nflreadpy` is nflverse's supported successor.
+  install on a current interpreter. `nflreadpy` is nflverse's supported successor. Every blueprint
+  function has an equivalent (`import_pbp_data` → `load_pbp`, and so on).
 - **Vegas win totals stop after 2020.** `nfldata/win_totals.csv` was discontinued, so
-  `projectedWins` is *market-implied expected wins*: each game's closing spread converted to a win
-  probability via the normal CDF (sigma 13.86) and summed over the regular season.
+  `projectedWins` is _market-implied expected wins_: each game's closing spread converted to a win
+  probability via the normal CDF (`MARGIN_SIGMA` 13.86) and summed over the regular season.
+  Verified empirically that a positive `spread_line` means the home team is favored.
 - **The depth-chart schema changed in 2025.** Through 2024 it is weekly snapshots
   (`club_code`/`depth_team`/`week`); from 2025 it is dated snapshots (`team`/`pos_abb`/`pos_rank`).
-  Both are handled. For legacy seasons the *last regular-season week* is used — later weeks exist
-  but only cover teams still in the playoffs.
+  Both are handled. For legacy seasons the **last regular-season week** is used — later weeks exist
+  but cover only teams still in the playoffs, which left 30 of 32 teams chartless.
 - **The draft dataset uses Pro-Football-Reference abbreviations** (`GNB`, `KAN`, `LVR`, `NWE`,
-  `NOR`, `SFO`, `TAM`, `LAR`). Normalised via `ABBR_FIXES`.
-- **`play_id` is not chronological.** Penalty and replay rows can carry a later id than the snap
-  they belong to, so plays are ordered by quarter then game clock.
-- **Timeout rows carry stale scores** (often 0-0) and are logged as `no_play`. They are dropped,
-  and a running max over the score guards against any remaining lag.
+  `NOR`, `SFO`, `TAM`, `LAR`). Normalised through `ABBR_FIXES`, which also covers relocations.
+  Before this, 8 teams per season had an empty draft class.
+- **`play_id` is not chronological.** Penalty and replay-review rows can carry a later id than the
+  snap they belong to, which made replay scores jump backwards. Plays are ordered by quarter then
+  game clock instead.
+- **Timeout rows carry stale scores** (often 0-0) and are logged as `no_play` — about 2,200 per
+  season. They are dropped, and a running max over the score guards against any remaining lag.
 - **`football_name` is the first name**, not the full name.
-- Records and per-game stat rates are **regular season only**, so they stay comparable across
-  teams; postseason games still get replays.
-- 2020 has 16-game regular seasons; BUF and CIN played 16 in 2022 (the cancelled game).
+- **Records and per-game rates are regular season only**, so they stay comparable; postseason games
+  still get replays. Including playoff plays had inflated KC's 2023 offense to 444 yds/game against
+  an official 344.
+- 2020 had 16-game regular seasons; BUF and CIN played 16 in 2022 (the cancelled game).
+
+## Validation
+
+`validate.py` covers the nine required checks and refuses to pass on extra or misspelled fields.
+It is verified by fault injection: 12 deliberate corruptions (missing team, duplicate id, null
+optional, malformed game id, out-of-range win probability, shuffled plays, dangling game
+reference, `NaN`, wrong type, unexpected field) were each caught.
 
 Data from [nflverse](https://github.com/nflverse), CC BY 4.0.

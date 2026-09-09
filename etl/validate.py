@@ -1,132 +1,306 @@
 """
-Validate that the emitted JSON matches the contract in src/types/nfl.ts.
+Validate the generated JSON against the contract in src/types/nfl.ts.
 
-Checks every file for exact key sets, types, and a few semantic invariants
-(win probabilities in range, plays ordered, scores monotonic). Run after
-build_data.py; exits non-zero on any violation.
+Checks, per the Stage 1 requirements:
+  1.  exactly 32 teams exist
+  2.  every required field is present, with the right runtime type
+  3.  no duplicate team ids
+  4.  game ids are well-formed and unique
+  5.  homeWinProb is a real number in 0..1
+  6.  plays are chronologically ordered
+  7.  every team game reference resolves to a generated game file
+  8.  output re-serialises cleanly (no NaN, Infinity or non-JSON objects)
+  9.  the data agrees with the TypeScript contract, including the rule that
+      optional (`?`) properties are omitted rather than emitted as null
 
-    python etl/validate.py
+Exits non-zero on any violation.
+
+    python etl/validate.py [--data public/data]
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import math
+import re
 import sys
 from pathlib import Path
 
-DATA = Path("public/data")
+GAME_ID = re.compile(r"^\d{4}_\d{2}_[A-Z]{2,3}_[A-Z]{2,3}$")
+HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
+CONFERENCES = {"AFC", "NFC"}
+GAME_TYPES = {"REG", "WC", "DIV", "CON", "SB"}
 
-TEAM_IDENTITY = {
-    "id", "name", "nick", "conference", "division",
-    "logo", "primaryColor", "secondaryColor",
+# name -> (type, required). Mirrors src/types/nfl.ts.
+TEAM_SUMMARY = {
+    "id": (str, True), "name": (str, True), "conference": (str, True),
+    "division": (str, True), "logo": (str, True), "primaryColor": (str, True),
+    "secondaryColor": (str, True), "lastSeason": (dict, True),
+    "projectedWins": (float, True),
 }
-TEAM_SUMMARY = TEAM_IDENTITY | {
-    "season", "record", "priorSeason", "projectedWins",
-    "pointsFor", "pointsAgainst", "pointDiff", "gamesPlayed",
+TEAM = TEAM_SUMMARY | {
+    "roster": (list, True), "depthChart": (dict, True), "draftClass": (list, True),
+    "stats": (dict, True), "games": (list, True),
 }
-TEAM = TEAM_SUMMARY | {"roster", "depthChart", "draftClass", "stats", "games"}
+PLAYER = {
+    "id": (str, True), "name": (str, True), "position": (str, True),
+    "number": (int, False), "age": (int, False),
+    "college": (str, False), "status": (str, False),
+}
+DRAFT_PICK = {
+    "round": (int, True), "pick": (int, True), "player": (str, True),
+    "position": (str, True), "college": (str, True),
+}
+STAT_LINE = {
+    "epaPerPlay": (float, True), "pointsPerGame": (float, True),
+    "yardsPerGame": (float, True), "successRate": (float, True),
+    "explosiveRate": (float, True), "plays": (int, True),
+}
 GAME_SUMMARY = {
-    "gameId", "season", "week", "gameType",
-    "home", "away", "homeScore", "awayScore", "date",
+    "gameId": (str, True), "season": (int, True), "week": (int, True),
+    "home": (str, True), "away": (str, True), "homeScore": (int, True),
+    "awayScore": (int, True), "date": (str, True), "gameType": (str, True),
 }
-GAME = GAME_SUMMARY | {"plays", "keyPlayCount"}
+GAME_TEAM = {
+    "id": (str, True), "name": (str, True), "logo": (str, True),
+    "color": (str, True), "finalScore": (int, True),
+}
+GAME = {
+    "gameId": (str, True), "season": (int, True), "week": (int, True),
+    "date": (str, True), "home": (dict, True), "away": (dict, True),
+    "plays": (list, True),
+}
 PLAY = {
-    "playId", "quarter", "clockSeconds", "gameSecondsRemaining", "homeWinProb",
-    "scoreHome", "scoreAway", "down", "distance", "posteam", "playType",
-    "description", "epa", "isKeyPlay",
+    "playId": (int, True), "quarter": (int, True), "clockSeconds": (int, True),
+    "homeWinProb": (float, True), "scoreHome": (int, True), "scoreAway": (int, True),
+    "down": (int, False), "distance": (int, False), "posteam": (str, True),
+    "playType": (str, True), "description": (str, True), "epa": (float, False),
+    "isKeyPlay": (bool, True),
 }
-PLAYER = {"id", "name", "position", "number", "age", "college", "status", "yearsExp", "headshot"}
-STAT_LINE = {"epaPerPlay", "successRate", "pointsPerGame", "yardsPerGame", "explosiveRate", "plays"}
 
 errors: list[str] = []
 
 
-def check_keys(where: str, obj: dict, expected: set[str]) -> None:
-    got = set(obj)
-    if got != expected:
-        missing, extra = expected - got, got - expected
-        detail = []
-        if missing:
-            detail.append(f"missing {sorted(missing)}")
-        if extra:
-            detail.append(f"unexpected {sorted(extra)}")
-        errors.append(f"{where}: {'; '.join(detail)}")
+def fail(msg: str) -> None:
+    errors.append(msg)
+
+
+def check_shape(where: str, obj, schema: dict[str, tuple[type, bool]]) -> None:
+    """Exact key set and runtime types; optional keys must be absent, not null."""
+    if not isinstance(obj, dict):
+        fail(f"{where}: expected an object, got {type(obj).__name__}")
+        return
+
+    for key, (typ, required) in schema.items():
+        if key not in obj:
+            if required:
+                fail(f"{where}: missing required field '{key}'")
+            continue
+        value = obj[key]
+        if value is None:
+            fail(f"{where}: '{key}' is null; optional fields must be omitted entirely")
+            continue
+        # bool is a subclass of int in Python; keep them distinct.
+        if typ is float:
+            ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+        elif typ is int:
+            ok = isinstance(value, int) and not isinstance(value, bool)
+        elif typ is bool:
+            ok = isinstance(value, bool)
+        else:
+            ok = isinstance(value, typ)
+        if not ok:
+            fail(f"{where}: '{key}' is {type(value).__name__}, expected {typ.__name__}")
+        elif typ is float and (math.isnan(value) or math.isinf(value)):
+            fail(f"{where}: '{key}' is {value}, which is not valid JSON")
+
+    for extra in set(obj) - set(schema):
+        fail(f"{where}: unexpected field '{extra}' not in the contract")
+
+
+def load(path: Path):
+    """Load, and prove the file round-trips as strict JSON (check 8)."""
+    raw = path.read_text(encoding="utf-8")
+    for bad in ("NaN", "Infinity"):
+        if re.search(rf"(?<![\"\w]){bad}(?![\"\w])", raw):
+            fail(f"{path}: contains the literal {bad}, which is not valid JSON")
+    data = json.loads(raw)
+    json.dumps(data, allow_nan=False)  # raises if anything is unserialisable
+    return data
 
 
 def main() -> int:
-    manifest = json.loads((DATA / "seasons.json").read_text())
-    seasons = [s["season"] for s in manifest["seasons"]]
-    print(f"Validating seasons {seasons}")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", type=Path, default=Path("public/data"))
+    args = ap.parse_args()
+    data: Path = args.data
 
-    game_ids_seen: set[str] = set()
+    # ---------- teams-index ----------
+    teams_index = load(data / "teams-index.json")
+    if not isinstance(teams_index, list):
+        fail("teams-index.json: expected an array")
+        teams_index = []
 
-    for season in seasons:
-        sdir = DATA / str(season)
+    # check 1: exactly 32 teams
+    if len(teams_index) != 32:
+        fail(f"teams-index.json: {len(teams_index)} teams, expected exactly 32")
 
-        index = json.loads((sdir / "teams-index.json").read_text())
-        if len(index) != 32:
-            errors.append(f"{season}/teams-index.json: {len(index)} teams, expected 32")
-        for t in index:
-            check_keys(f"{season}/teams-index[{t.get('id')}]", t, TEAM_SUMMARY)
-            if t["conference"] not in ("AFC", "NFC"):
-                errors.append(f"{season} {t['id']}: bad conference {t['conference']!r}")
-            if not 0 <= t["projectedWins"] <= t["gamesPlayed"]:
-                errors.append(f"{season} {t['id']}: projectedWins {t['projectedWins']} out of range")
+    # check 3: no duplicate team ids
+    ids = [t.get("id") for t in teams_index]
+    dupes = {i for i in ids if ids.count(i) > 1}
+    if dupes:
+        fail(f"teams-index.json: duplicate team ids {sorted(dupes)}")
 
-        games_index = json.loads((sdir / "games-index.json").read_text())
-        for g in games_index:
-            check_keys(f"{season}/games-index[{g.get('gameId')}]", g, GAME_SUMMARY)
+    for t in teams_index:
+        where = f"teams-index[{t.get('id')}]"
+        check_shape(where, t, TEAM_SUMMARY)
+        if t.get("conference") not in CONFERENCES:
+            fail(f"{where}: conference {t.get('conference')!r} not in {sorted(CONFERENCES)}")
+        for key in ("primaryColor", "secondaryColor"):
+            if not HEX_COLOR.match(str(t.get(key, ""))):
+                fail(f"{where}: {key} {t.get(key)!r} is not a #rrggbb hex color")
+        rec = t.get("lastSeason")
+        if isinstance(rec, dict):
+            check_shape(f"{where}.lastSeason", rec, {
+                "wins": (int, True), "losses": (int, True), "ties": (int, True),
+            })
+        pw = t.get("projectedWins")
+        if isinstance(pw, (int, float)) and not 0 <= pw <= 25:
+            fail(f"{where}: projectedWins {pw} outside a plausible 0..25")
 
-        for tf in sorted((sdir / "team").glob("*.json")):
-            team = json.loads(tf.read_text())
-            check_keys(f"{season}/team/{tf.stem}", team, TEAM)
-            for p in team["roster"][:5]:
-                check_keys(f"{season}/team/{tf.stem} roster", p, PLAYER)
-            for side in ("offense", "defense"):
-                check_keys(f"{season}/team/{tf.stem} stats.{side}", team["stats"][side], STAT_LINE)
-            if not team["roster"]:
-                errors.append(f"{season}/team/{tf.stem}: empty roster")
-            if not team["depthChart"]:
-                errors.append(f"{season}/team/{tf.stem}: empty depth chart")
-            if not team["draftClass"]:
-                errors.append(f"{season}/team/{tf.stem}: empty draft class")
+    # ---------- games-index ----------
+    games_index = load(data / "games-index.json")
+    indexed_ids = [g.get("gameId") for g in games_index]
 
-        game_ids_seen |= {g["gameId"] for g in games_index}
+    # check 4: game ids well-formed and unique
+    seen: set[str] = set()
+    for g in games_index:
+        gid = g.get("gameId", "")
+        where = f"games-index[{gid}]"
+        check_shape(where, g, GAME_SUMMARY)
+        if not GAME_ID.match(str(gid)):
+            fail(f"{where}: malformed game id")
+        if gid in seen:
+            fail(f"{where}: duplicate game id")
+        seen.add(gid)
+        if g.get("gameType") not in GAME_TYPES:
+            fail(f"{where}: gameType {g.get('gameType')!r} not in {sorted(GAME_TYPES)}")
 
-    files = sorted((DATA / "game").glob("*.json"))
-    print(f"Checking {len(files)} game files...")
-    for gf in files:
-        game = json.loads(gf.read_text())
-        check_keys(f"game/{gf.stem}", game, GAME)
-        plays = game["plays"]
-        if not plays:
-            errors.append(f"game/{gf.stem}: no plays")
+    team_ids = set(ids)
+    for g in games_index:
+        for side in ("home", "away"):
+            if g.get(side) not in team_ids:
+                fail(f"games-index[{g.get('gameId')}]: {side} team {g.get(side)!r} is not a known team")
+
+    # ---------- game files ----------
+    game_files = sorted((data / "game").glob("*.json"))
+    generated_ids = {f.stem for f in game_files}
+    print(f"Checking {len(game_files)} game files, {len(teams_index)} teams...")
+
+    missing = set(indexed_ids) - generated_ids
+    if missing:
+        fail(f"{len(missing)} indexed games have no game file, e.g. {sorted(missing)[:3]}")
+    orphaned = generated_ids - set(indexed_ids)
+    if orphaned:
+        fail(f"{len(orphaned)} game files are not in games-index, e.g. {sorted(orphaned)[:3]}")
+
+    for gf in game_files:
+        game = load(gf)
+        where = f"game/{gf.stem}"
+        check_shape(where, game, GAME)
+        if game.get("gameId") != gf.stem:
+            fail(f"{where}: gameId {game.get('gameId')!r} disagrees with its filename")
+        for side in ("home", "away"):
+            if isinstance(game.get(side), dict):
+                check_shape(f"{where}.{side}", game[side], GAME_TEAM)
+
+        plays = game.get("plays")
+        if not isinstance(plays, list) or not plays:
+            fail(f"{where}: no plays")
             continue
-        check_keys(f"game/{gf.stem} plays[0]", plays[0], PLAY)
+
         for p in plays:
-            if not 0.0 <= p["homeWinProb"] <= 1.0:
-                errors.append(f"game/{gf.stem} play {p['playId']}: wp {p['homeWinProb']} out of range")
+            check_shape(f"{where} play {p.get('playId')}", p, PLAY)
+            # check 5: homeWinProb is a real number in 0..1
+            wp = p.get("homeWinProb")
+            if not isinstance(wp, (int, float)) or isinstance(wp, bool):
+                fail(f"{where} play {p.get('playId')}: homeWinProb is not numeric")
+            elif math.isnan(wp) or math.isinf(wp) or not 0.0 <= wp <= 1.0:
+                fail(f"{where} play {p.get('playId')}: homeWinProb {wp} outside 0..1")
+            if p.get("quarter", 0) <= 4 and not 0 <= p.get("clockSeconds", -1) <= 900:
+                fail(f"{where} play {p.get('playId')}: clockSeconds {p.get('clockSeconds')} outside 0..900")
+
+        # check 6: chronological order — quarter ascending, clock descending
+        for a, b in zip(plays, plays[1:]):
+            if b["quarter"] < a["quarter"]:
+                fail(f"{where}: quarter goes backwards at play {b['playId']}")
                 break
-        # scores never decrease as the replay advances
+            if b["quarter"] == a["quarter"] and b["clockSeconds"] > a["clockSeconds"]:
+                fail(f"{where}: clock runs backwards at play {b['playId']}")
+                break
+        # scores are monotonic, and the replay must end on the real final score
         for a, b in zip(plays, plays[1:]):
             if b["scoreHome"] < a["scoreHome"] or b["scoreAway"] < a["scoreAway"]:
-                errors.append(f"game/{gf.stem}: score decreases at play {b['playId']}")
+                fail(f"{where}: score decreases at play {b['playId']}")
                 break
-        if game["keyPlayCount"] != sum(1 for p in plays if p["isKeyPlay"]):
-            errors.append(f"game/{gf.stem}: keyPlayCount mismatch")
-        # End to end: the replay must finish on the real final score.
         last = plays[-1]
         if (last["scoreHome"], last["scoreAway"]) != (
             game["home"]["finalScore"], game["away"]["finalScore"]
         ):
-            errors.append(
-                f"game/{gf.stem}: replay ends {last['scoreAway']}-{last['scoreHome']}, "
+            fail(
+                f"{where}: replay ends {last['scoreAway']}-{last['scoreHome']}, "
                 f"actual {game['away']['finalScore']}-{game['home']['finalScore']}"
             )
 
-    missing_games = game_ids_seen - {f.stem for f in files}
-    if missing_games:
-        errors.append(f"{len(missing_games)} indexed games have no game file, e.g. {sorted(missing_games)[:3]}")
+    # ---------- team files ----------
+    team_files = sorted((data / "team").glob("*.json"))
+    if len(team_files) != 32:
+        fail(f"team/: {len(team_files)} files, expected exactly 32")
+
+    for tf in team_files:
+        team = load(tf)
+        where = f"team/{tf.stem}"
+        check_shape(where, team, TEAM)
+        if team.get("id") != tf.stem:
+            fail(f"{where}: id {team.get('id')!r} disagrees with its filename")
+
+        for p in team.get("roster", []):
+            check_shape(f"{where} roster[{p.get('id')}]", p, PLAYER)
+        if not team.get("roster"):
+            fail(f"{where}: empty roster")
+
+        depth = team.get("depthChart", {})
+        if not depth:
+            fail(f"{where}: empty depth chart")
+        for pos, players in depth.items():
+            if not isinstance(players, list) or not players:
+                fail(f"{where}: depthChart['{pos}'] is empty")
+                continue
+            for p in players:
+                check_shape(f"{where} depthChart[{pos}]", p, PLAYER)
+
+        if not team.get("draftClass"):
+            fail(f"{where}: empty draft class")
+        for d in team.get("draftClass", []):
+            check_shape(f"{where} draftClass", d, DRAFT_PICK)
+
+        stats = team.get("stats", {})
+        for side in ("offense", "defense"):
+            if side not in stats:
+                fail(f"{where}: stats.{side} missing")
+            else:
+                check_shape(f"{where} stats.{side}", stats[side], STAT_LINE)
+
+        # check 7: every team game reference resolves to a generated game file
+        if not team.get("games"):
+            fail(f"{where}: no games")
+        for g in team.get("games", []):
+            check_shape(f"{where} games[{g.get('gameId')}]", g, GAME_SUMMARY)
+            if g.get("gameId") not in generated_ids:
+                fail(f"{where}: game {g.get('gameId')!r} has no generated game file")
+            if tf.stem not in (g.get("home"), g.get("away")):
+                fail(f"{where}: game {g.get('gameId')!r} does not involve this team")
 
     if errors:
         print(f"\nFAILED — {len(errors)} problem(s):")
@@ -136,7 +310,10 @@ def main() -> int:
             print(f"  ... and {len(errors) - 40} more")
         return 1
 
-    print(f"\nOK — {len(files)} games, {len(seasons)} seasons, contract matches.")
+    print(
+        f"\nOK — 32 teams, {len(game_files)} games, {len(games_index)} indexed. "
+        "All 9 checks pass; data matches the TypeScript contract."
+    )
     return 0
 
 

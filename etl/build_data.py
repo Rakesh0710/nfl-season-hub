@@ -1,10 +1,20 @@
 """
 NFL Season Hub — ETL
 
-Turns raw nflverse data into the small, typed JSON files the frontend reads.
-Run once; output is committed to public/data.
+Converts raw nflverse data into the small, typed static JSON the frontend reads.
+Run once; the output is committed to public/data.
 
-    python etl/build_data.py [--seasons 2020 2021 ...] [--out public/data]
+    python etl/build_data.py [--seasons 2020 ... 2025] [--out public/data] [--clean]
+
+Output layout:
+    public/data/teams-index.json        league dashboard (the covered season)
+    public/data/games-index.json        every game, all seasons
+    public/data/team/<TEAM_ID>.json     one per team, 32 total
+    public/data/game/<GAME_ID>.json     one per game
+
+The team layer covers the most recent season in range; `lastSeason` is the
+regular-season record of the year before it. The game layer spans every season,
+so all six seasons of replays are reachable from the game browser.
 
 Data: nflverse (https://github.com/nflverse), CC BY 4.0.
 """
@@ -21,20 +31,55 @@ from pathlib import Path
 import nflreadpy as nfl
 import polars as pl
 
+# --------------------------------------------------------------------------
+# tunable constants — every threshold in the pipeline lives here
+# --------------------------------------------------------------------------
+
 SEASONS = [2020, 2021, 2022, 2023, 2024, 2025]
 
-# Standard deviation of NFL game margins. Converting a point spread to a win
-# probability with the normal CDF at this sigma is the conventional approximation.
+# Standard deviation of NFL game margins. Converting a closing point spread to
+# a win probability with the normal CDF at this sigma is the conventional
+# approximation, and it is what `projectedWins` is built from.
 MARGIN_SIGMA = 13.86
 
-# A play is "key" if the home win probability moves at least this much.
+# --- key-play rule -------------------------------------------------------
+# A play is flagged isKeyPlay when ANY of these hold:
+#   1. the home win probability moved at least KEY_PLAY_WP_SWING
+#   2. the play scored a touchdown
+#   3. the play was a turnover (interception or lost fumble)
+#   4. the play was a made field goal
+# Rule 1 catches drama the box score misses (a stop on 4th and goal); rules
+# 2-4 guarantee every scoring play and giveaway is marked even when the game
+# is already decided and the win-probability needle barely moves.
 KEY_PLAY_WP_SWING = 0.10
 
-# Plays we never want in the replay: no win-probability value or no real snap.
+# Play types that represent a real snap or kick. Everything else in the raw
+# feed (end of quarter, two-minute warning, game end) is timeline noise.
 REPLAY_PLAY_TYPES = {
     "pass", "run", "punt", "field_goal", "kickoff",
     "extra_point", "qb_kneel", "qb_spike", "no_play",
 }
+
+# Longest description kept, in characters. Full nflverse descriptions run to
+# ~250 chars and are the single largest contributor to game file size.
+MAX_DESCRIPTION = 140
+
+# nflverse keeps historical and Pro-Football-Reference abbreviations in some
+# datasets; the schedule uses the modern ones, so everything is normalised to
+# the schedule's vocabulary.
+ABBR_FIXES = {
+    # relocations
+    "OAK": "LV", "SD": "LAC", "SDG": "LAC", "STL": "LA", "LAR": "LA",
+    # Pro-Football-Reference codes, used by the draft dataset
+    "GNB": "GB", "KAN": "KC", "LVR": "LV", "NWE": "NE",
+    "NOR": "NO", "SFO": "SF", "TAM": "TB",
+}
+
+# Keys that are optional in the TypeScript contract. They are omitted from the
+# JSON entirely when unknown: `null` does not satisfy `number | undefined`
+# under strict TypeScript, so an absent key is the only encoding that fits.
+PLAYER_OPTIONAL = ("number", "age", "college", "status")
+PLAY_OPTIONAL = ("down", "distance", "epa")
 
 
 # --------------------------------------------------------------------------
@@ -50,26 +95,47 @@ def win_prob_from_spread(spread: float) -> float:
     return norm_cdf(spread / MARGIN_SIGMA)
 
 
-def clean(value):
-    """Make a value JSON-safe: NaN/inf -> None, numpy/polars scalars -> python."""
+def num(value, digits: int = 4) -> float | None:
+    """Coerce to a JSON-safe float. NaN and infinity become None."""
     if value is None:
         return None
-    if isinstance(value, float):
-        return None if (math.isnan(value) or math.isinf(value)) else round(value, 4)
-    if isinstance(value, (date, datetime)):
-        return value.isoformat()[:10]
-    return value
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(f) or math.isinf(f):
+        return None
+    return round(f, digits)
+
+
+def whole(value) -> int | None:
+    """Coerce to a JSON-safe int, tolerating floats and numeric strings."""
+    f = num(value)
+    return None if f is None else int(f)
+
+
+def text(value) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def drop_absent(record: dict, optional: tuple[str, ...]) -> dict:
+    """Remove optional keys whose value is None, so `?` properties typecheck."""
+    for key in optional:
+        if record.get(key) is None:
+            record.pop(key, None)
+    return record
 
 
 def write_json(path: Path, payload) -> int:
+    """Serialise strictly: allow_nan=False makes NaN/Infinity a hard error."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    text = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    path.write_text(text, encoding="utf-8")
-    return len(text.encode("utf-8"))
+    body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    path.write_text(body, encoding="utf-8")
+    return len(body.encode("utf-8"))
 
 
 def age_on(birth_date, season: int) -> int | None:
-    """Approximate age at the start of the given season (Sept 1)."""
+    """Approximate age at the start of the given season (September 1)."""
     if birth_date is None:
         return None
     if isinstance(birth_date, str):
@@ -77,9 +143,17 @@ def age_on(birth_date, season: int) -> int | None:
             birth_date = datetime.fromisoformat(birth_date[:10]).date()
         except ValueError:
             return None
+    if not isinstance(birth_date, (date, datetime)):
+        return None
+    if isinstance(birth_date, datetime):
+        birth_date = birth_date.date()
     ref = date(season, 9, 1)
     years = ref.year - birth_date.year - ((ref.month, ref.day) < (birth_date.month, birth_date.day))
     return years if 15 < years < 60 else None
+
+
+def fix_abbr(abbr):
+    return ABBR_FIXES.get(abbr, abbr) if abbr else abbr
 
 
 # --------------------------------------------------------------------------
@@ -87,20 +161,18 @@ def age_on(birth_date, season: int) -> int | None:
 # --------------------------------------------------------------------------
 
 def build_team_meta(live_abbrs: set[str]) -> dict[str, dict]:
-    """Static per-team identity: names, colors, logos, division."""
-    teams = nfl.load_teams().filter(pl.col("team_abbr").is_in(list(live_abbrs)))
+    """Static identity per team: name, conference, division, colors, logo."""
+    teams = nfl.load_teams().filter(pl.col("team_abbr").is_in(sorted(live_abbrs)))
     meta: dict[str, dict] = {}
     for row in teams.iter_rows(named=True):
-        division = row["team_division"] or ""
         meta[row["team_abbr"]] = {
             "id": row["team_abbr"],
-            "name": row["team_name"],
-            "nick": row["team_nick"],
-            "conference": row["team_conf"],
-            "division": division,
-            "logo": row["team_logo_espn"],
-            "primaryColor": row["team_color"],
-            "secondaryColor": row["team_color2"],
+            "name": text(row["team_name"]),
+            "conference": text(row["team_conf"]),
+            "division": text(row["team_division"]),
+            "logo": text(row["team_logo_espn"]),
+            "primaryColor": text(row["team_color"]),
+            "secondaryColor": text(row["team_color2"]),
         }
     missing = live_abbrs - set(meta)
     if missing:
@@ -108,33 +180,25 @@ def build_team_meta(live_abbrs: set[str]) -> dict[str, dict]:
     return meta
 
 
-# --------------------------------------------------------------------------
-# records + market-implied expected wins (from closing spreads)
-# --------------------------------------------------------------------------
-
 def build_season_records(schedules: pl.DataFrame) -> dict[int, dict[str, dict]]:
     """
-    Per season, per team: W-L-T, points for/against, and market-implied
+    Per season, per team: regular-season W-L-T, points, and market-implied
     expected wins summed from each game's closing spread.
 
-    The nflverse Vegas win-total dataset stops after 2020, so preseason
-    over/unders are unavailable for most of our range. Summing per-game
-    market win probabilities gives a comparable "how many games did the
-    market expect this team to win" figure with full coverage.
+    Regular season only. A record and an expected-win total are both 17-game
+    figures, so folding playoff games in would make them incomparable.
     """
     out: dict[int, dict[str, dict]] = {}
-    # Regular season only: a W-L record and an expected-win total are both
-    # 17-game figures, so folding playoff games in would make them incomparable.
     played = schedules.filter(
         pl.col("home_score").is_not_null() & (pl.col("game_type") == "REG")
     )
 
     for row in played.iter_rows(named=True):
-        season, home, away = row["season"], row["home_team"], row["away_team"]
-        hs, aws = row["home_score"], row["away_score"]
-        spread = row["spread_line"]
-
+        season = int(row["season"])
+        home, away = fix_abbr(row["home_team"]), fix_abbr(row["away_team"])
+        hs, aws = int(row["home_score"]), int(row["away_score"])
         bucket = out.setdefault(season, {})
+
         for team, own, opp in ((home, hs, aws), (away, aws, hs)):
             t = bucket.setdefault(team, {
                 "wins": 0, "losses": 0, "ties": 0,
@@ -151,6 +215,7 @@ def build_season_records(schedules: pl.DataFrame) -> dict[int, dict[str, dict]]:
             else:
                 t["ties"] += 1
 
+        spread = num(row["spread_line"])
         if spread is not None:
             p_home = win_prob_from_spread(spread)
             bucket[home]["expectedWins"] += p_home
@@ -159,12 +224,8 @@ def build_season_records(schedules: pl.DataFrame) -> dict[int, dict[str, dict]]:
     return out
 
 
-# --------------------------------------------------------------------------
-# team stat lines from play-by-play
-# --------------------------------------------------------------------------
-
 def build_stat_lines(pbp: pl.DataFrame, records: dict[str, dict]) -> dict[str, dict]:
-    """Offense and defense stat lines per team for one season."""
+    """Offense and defense stat lines for one season, from play-by-play."""
     # Regular season only: these are per-game rates divided by the 17-game
     # regular-season count, so postseason plays would inflate every total.
     scrimmage = pbp.filter(
@@ -185,31 +246,26 @@ def build_stat_lines(pbp: pl.DataFrame, records: dict[str, dict]) -> dict[str, d
             )
             .filter(pl.col(team_col).is_not_null())
         )
-        return {r[team_col]: r for r in agg.iter_rows(named=True)}
+        return {fix_abbr(r[team_col]): r for r in agg.iter_rows(named=True)}
 
     offense, defense = side("posteam"), side("defteam")
+
+    def line(agg: dict | None, points: int, games: int) -> dict:
+        return {
+            "epaPerPlay": num(agg["epa_per_play"]) if agg else 0.0,
+            "pointsPerGame": num(points / games),
+            "yardsPerGame": num(agg["yards"] / games) if agg else 0.0,
+            "successRate": num(agg["success_rate"]) if agg else 0.0,
+            "explosiveRate": num(agg["explosive_rate"]) if agg else 0.0,
+            "plays": int(agg["plays"]) if agg else 0,
+        }
 
     lines: dict[str, dict] = {}
     for team, rec in records.items():
         games = max(rec["gamesPlayed"], 1)
-        o, d = offense.get(team), defense.get(team)
         lines[team] = {
-            "offense": {
-                "epaPerPlay": clean(o["epa_per_play"]) if o else None,
-                "successRate": clean(o["success_rate"]) if o else None,
-                "pointsPerGame": clean(rec["pointsFor"] / games),
-                "yardsPerGame": clean(o["yards"] / games) if o else None,
-                "explosiveRate": clean(o["explosive_rate"]) if o else None,
-                "plays": o["plays"] if o else 0,
-            },
-            "defense": {
-                "epaPerPlay": clean(d["epa_per_play"]) if d else None,
-                "successRate": clean(d["success_rate"]) if d else None,
-                "pointsPerGame": clean(rec["pointsAgainst"] / games),
-                "yardsPerGame": clean(d["yards"] / games) if d else None,
-                "explosiveRate": clean(d["explosive_rate"]) if d else None,
-                "plays": d["plays"] if d else 0,
-            },
+            "offense": line(offense.get(team), rec["pointsFor"], games),
+            "defense": line(defense.get(team), rec["pointsAgainst"], games),
         }
     return lines
 
@@ -218,106 +274,127 @@ def build_stat_lines(pbp: pl.DataFrame, records: dict[str, dict]) -> dict[str, d
 # rosters, depth charts, draft
 # --------------------------------------------------------------------------
 
-def build_rosters(season: int) -> dict[str, list[dict]]:
+def build_rosters(season: int) -> tuple[dict[str, list[dict]], dict[str, dict]]:
+    """
+    Returns (players by team, players by nflverse id).
+
+    The id index lets the depth chart reuse full Player objects instead of
+    re-deriving a thinner copy of the same person.
+    """
     rosters = nfl.load_rosters(seasons=[season])
-    out: dict[str, list[dict]] = {}
+    by_team: dict[str, list[dict]] = {}
+    by_id: dict[str, dict] = {}
+
     for r in rosters.iter_rows(named=True):
         team = fix_abbr(r.get("team"))
-        if not team:
+        name = text(r.get("full_name"))
+        if not team or not name:
             continue
-        out.setdefault(team, []).append({
-            "id": r.get("gsis_id") or f"{team}-{r.get('full_name')}",
-            "name": r.get("full_name"),
-            "position": r.get("position"),
-            "number": int(r["jersey_number"]) if r.get("jersey_number") is not None else None,
+        gsis = text(r.get("gsis_id"))
+        player = drop_absent({
+            "id": gsis or f"{team}-{name}",
+            "name": name,
+            "position": text(r.get("position")),
+            "number": whole(r.get("jersey_number")),
             "age": age_on(r.get("birth_date"), season),
-            "college": r.get("college"),
-            "status": r.get("status"),
-            "yearsExp": int(r["years_exp"]) if r.get("years_exp") is not None else None,
-            "headshot": r.get("headshot_url"),
-        })
-    for players in out.values():
-        players.sort(key=lambda p: (p["position"] or "ZZ", p["name"] or ""))
-    return out
+            "college": text(r.get("college")) or None,
+            "status": text(r.get("status")) or None,
+        }, PLAYER_OPTIONAL)
+        by_team.setdefault(team, []).append(player)
+        if gsis:
+            by_id[gsis] = player
+
+    for players in by_team.values():
+        players.sort(key=lambda p: (p["position"] or "ZZ", p["name"]))
+    return by_team, by_id
 
 
-def build_depth_charts(season: int) -> dict[str, dict[str, list[dict]]]:
+def build_depth_charts(season: int, by_id: dict[str, dict]) -> dict[str, dict[str, list[dict]]]:
     """
-    Position -> ordered players, per team.
+    Team -> position -> Player[] in depth order (index 0 is the starter).
 
     nflverse changed this schema in 2025: seasons through 2024 are weekly
-    snapshots (club_code/depth_team/position), 2025 onward are dated
-    snapshots (team/pos_abb/pos_rank). Both are normalised to the same shape,
-    taking the most recent snapshot of the season.
+    snapshots (club_code/depth_team/week), 2025 onward are dated snapshots
+    (team/pos_abb/pos_rank). Both normalise to the same shape.
     """
     try:
         dc = nfl.load_depth_charts(seasons=[season])
-    except Exception as exc:  # dataset is occasionally unavailable
+    except Exception as exc:
         print(f"    ! depth charts unavailable for {season}: {exc}")
         return {}
-
     if dc.is_empty():
         return {}
 
     if "depth_team" in dc.columns:  # legacy weekly schema (<= 2024)
-        # Use the final regular-season week. Later weeks exist but only cover
-        # the teams still playing, which would leave most teams without a chart.
+        # The LAST REGULAR-SEASON week. Later weeks exist but only cover teams
+        # still in the playoffs, which would leave most teams with no chart.
         reg = dc.filter((pl.col("game_type") == "REG") & pl.col("week").is_not_null())
-        latest = reg["week"].max()
-        snap = reg.filter(pl.col("week") == latest)
+        snap = reg.filter(pl.col("week") == reg["week"].max())
         rows = [
             {
                 "team": fix_abbr(r["club_code"]),
-                "position": r["position"],
-                "rank": r["depth_team"],
-                "name": " ".join(
-                    x for x in (r.get("football_name") or r.get("first_name"), r.get("last_name")) if x
-                ),
-                "id": r.get("gsis_id"),
-                "number": r.get("jersey_number"),
+                "position": text(r["position"]),
+                "rank": whole(r["depth_team"]),
+                # football_name is the FIRST name, not the full name.
+                "name": " ".join(x for x in (
+                    text(r.get("football_name")) or text(r.get("first_name")),
+                    text(r.get("last_name")),
+                ) if x),
+                "gsis": text(r.get("gsis_id")),
+                "number": whole(r.get("jersey_number")),
             }
             for r in snap.iter_rows(named=True)
         ]
     else:  # dated schema (>= 2025)
-        latest = dc["dt"].max()
-        snap = dc.filter(pl.col("dt") == latest)
+        snap = dc.filter(pl.col("dt") == dc["dt"].max())
         rows = [
             {
                 "team": fix_abbr(r["team"]),
-                "position": r.get("pos_abb") or r.get("pos_name"),
-                "rank": r.get("pos_rank"),
-                "name": r.get("player_name"),
-                "id": r.get("gsis_id"),
+                "position": text(r.get("pos_abb")) or text(r.get("pos_name")),
+                "rank": whole(r.get("pos_rank")),
+                "name": text(r.get("player_name")),
+                "gsis": text(r.get("gsis_id")),
                 "number": None,
             }
             for r in snap.iter_rows(named=True)
         ]
 
     out: dict[str, dict[str, list[dict]]] = {}
-    seen: set[tuple] = set()
+    seen: set[tuple[str, str, str]] = set()
     for r in rows:
-        team, pos = r["team"], r["position"]
-        if not team or not pos or not r["name"]:
+        team, pos, name = r["team"], r["position"], r["name"]
+        if not team or not pos or not name:
             continue
-        key = (team, pos, r["name"])
+        key = (team, pos, name)
         if key in seen:
             continue
         seen.add(key)
-        out.setdefault(team, {}).setdefault(pos, []).append({
-            "id": r["id"] or f"{team}-{r['name']}",
-            "name": r["name"],
-            "position": pos,
-            "number": int(r["number"]) if str(r["number"] or "").isdigit() else None,
-            "rank": int(r["rank"]) if r["rank"] is not None else 99,
-        })
 
-    for positions in out.values():
-        for players in positions.values():
-            players.sort(key=lambda p: p["rank"])
-    return out
+        # Prefer the full roster entry so the depth chart carries age/college.
+        player = by_id.get(r["gsis"])
+        if player is None:
+            player = drop_absent({
+                "id": r["gsis"] or f"{team}-{name}",
+                "name": name,
+                "position": pos,
+                "number": r["number"],
+            }, PLAYER_OPTIONAL)
+        out.setdefault(team, {}).setdefault(pos, []).append(
+            (player, r["rank"] if r["rank"] is not None else 99)
+        )
+
+    # Sort by depth rank, then drop the rank — array order encodes it.
+    return {
+        team: {
+            pos: [p for p, _ in sorted(entries, key=lambda e: e[1])]
+            for pos, entries in positions.items()
+        }
+        for team, positions in out.items()
+    }
 
 
 def build_draft(season: int) -> dict[str, list[dict]]:
+    """Team -> that season's draft class, in pick order."""
     try:
         picks = nfl.load_draft_picks(seasons=[season])
     except Exception as exc:
@@ -327,53 +404,42 @@ def build_draft(season: int) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {}
     for r in picks.iter_rows(named=True):
         team = fix_abbr(r.get("team"))
-        if not team:
+        rnd, pick = whole(r.get("round")), whole(r.get("pick"))
+        player = text(r.get("pfr_player_name"))
+        if not team or rnd is None or pick is None or not player:
             continue
         out.setdefault(team, []).append({
-            "round": int(r["round"]) if r.get("round") is not None else None,
-            "pick": int(r["pick"]) if r.get("pick") is not None else None,
-            "player": r.get("pfr_player_name"),
-            "position": r.get("position"),
-            "college": r.get("college"),
+            "round": rnd,
+            "pick": pick,
+            "player": player,
+            # Required by the contract; a handful of picks have no listed
+            # position or college, which become "" rather than a missing key.
+            "position": text(r.get("position")),
+            "college": text(r.get("college")),
         })
-    for pl_ in out.values():
-        pl_.sort(key=lambda p: (p["round"] or 99, p["pick"] or 999))
+    for picks_ in out.values():
+        picks_.sort(key=lambda p: (p["round"], p["pick"]))
     return out
 
 
 # --------------------------------------------------------------------------
-# games + replay plays
+# games and replay plays
 # --------------------------------------------------------------------------
 
-# nflverse keeps historical abbreviations in some datasets; the schedule uses
-# the modern ones, so everything is normalised to the schedule's vocabulary.
-ABBR_FIXES = {
-    # relocations
-    "OAK": "LV", "SD": "LAC", "SDG": "LAC", "STL": "LA", "LAR": "LA",
-    # Pro-Football-Reference codes, used by the draft dataset
-    "GNB": "GB", "KAN": "KC", "LVR": "LV", "NWE": "NE",
-    "NOR": "NO", "SFO": "SF", "TAM": "TB",
-}
-
-
-def fix_abbr(abbr: str | None) -> str | None:
-    return ABBR_FIXES.get(abbr, abbr) if abbr else abbr
-
-
 def build_plays(game_pbp: pl.DataFrame) -> list[dict]:
-    """Trim one game's play-by-play down to just what the replay animates."""
+    """Trim one game's play-by-play to exactly the GamePlay contract."""
     rows = (
         game_pbp.filter(
             pl.col("home_wp").is_not_null()
-            & pl.col("play_type").is_in(list(REPLAY_PLAY_TYPES))
+            & pl.col("play_type").is_in(sorted(REPLAY_PLAY_TYPES))
             # Timeouts are logged as no_play rows and often carry a stale score
-            # (frequently 0-0), which would make the replay's scoreboard jump.
-            # They aren't snaps, so they have no place in the replay either.
+            # (frequently 0-0), which would make the scoreboard jump. They are
+            # not snaps, so they have no place in a replay either.
             & (pl.col("timeout").fill_null(0) != 1)
         )
-        # play_id is NOT reliably chronological: penalty and replay rows can
-        # carry a later id than the snap they belong to, which would make the
-        # replay's score jump backwards. The game clock is the real ordering.
+        # play_id is NOT reliably chronological: penalty and replay-review rows
+        # can carry a later id than the snap they belong to. The game clock is
+        # the real ordering.
         .sort(
             ["qtr", "game_seconds_remaining", "play_id"],
             descending=[False, True, False],
@@ -384,52 +450,70 @@ def build_plays(game_pbp: pl.DataFrame) -> list[dict]:
     plays: list[dict] = []
     prev_wp: float | None = None
     max_home = max_away = 0
+
     for r in rows:
-        wp = float(r["home_wp"])
+        wp = num(r["home_wp"], 3)
+        if wp is None:
+            continue
+        wp = min(max(wp, 0.0), 1.0)  # guarantee the 0..1 contract
         swing = abs(wp - prev_wp) if prev_wp is not None else 0.0
+
+        # Football scores only ever increase; a running max repairs any row
+        # whose score field lags the play it belongs to.
+        max_home = max(max_home, whole(r["total_home_score"]) or 0)
+        max_away = max(max_away, whole(r["total_away_score"]) or 0)
+
         is_key = (
             swing >= KEY_PLAY_WP_SWING
             or bool(r.get("touchdown"))
             or bool(r.get("interception"))
             or bool(r.get("fumble_lost"))
+            or bool(r.get("field_goal_result") == "made")
         )
-        # Football scores only ever go up; a running max repairs any remaining
-        # row whose score field lags the play it belongs to.
-        max_home = max(max_home, int(r["total_home_score"] or 0))
-        max_away = max(max_away, int(r["total_away_score"] or 0))
-        desc = (r.get("desc") or "").strip()
-        plays.append({
-            "playId": int(r["play_id"]),
-            "quarter": int(r["qtr"]) if r["qtr"] is not None else 0,
-            "clockSeconds": int(r["quarter_seconds_remaining"] or 0),
-            "gameSecondsRemaining": int(r["game_seconds_remaining"] or 0),
-            "homeWinProb": round(wp, 3),
+
+        plays.append(drop_absent({
+            "playId": whole(r["play_id"]) or 0,
+            "quarter": whole(r["qtr"]) or 0,
+            "clockSeconds": whole(r["quarter_seconds_remaining"]) or 0,
+            "homeWinProb": wp,
             "scoreHome": max_home,
             "scoreAway": max_away,
-            "down": int(r["down"]) if r.get("down") is not None else None,
-            "distance": int(r["ydstogo"]) if r.get("ydstogo") is not None else None,
-            "posteam": fix_abbr(r.get("posteam")),
-            "playType": r.get("play_type"),
-            "description": desc[:140],
-            "epa": round(float(r["epa"]), 2) if r.get("epa") is not None else None,
+            "down": whole(r.get("down")),
+            "distance": whole(r.get("ydstogo")),
+            "posteam": text(fix_abbr(r.get("posteam"))),
+            "playType": text(r.get("play_type")),
+            "description": text(r.get("desc"))[:MAX_DESCRIPTION],
+            "epa": num(r.get("epa"), 2),
             "isKeyPlay": is_key,
-        })
+        }, PLAY_OPTIONAL))
         prev_wp = wp
 
     return plays
 
 
 def game_summary(row: dict) -> dict:
+    """One GameSummary from a schedule row."""
     return {
-        "gameId": row["game_id"],
+        "gameId": text(row["game_id"]),
         "season": int(row["season"]),
         "week": int(row["week"]),
-        "gameType": row.get("game_type"),
-        "home": row["home_team"],
-        "away": row["away_team"],
-        "homeScore": clean(row["home_score"]),
-        "awayScore": clean(row["away_score"]),
-        "date": clean(row.get("gameday")),
+        "home": fix_abbr(row["home_team"]),
+        "away": fix_abbr(row["away_team"]),
+        "homeScore": whole(row["home_score"]) or 0,
+        "awayScore": whole(row["away_score"]) or 0,
+        "date": text(row.get("gameday"))[:10],
+        "gameType": text(row.get("game_type")),
+    }
+
+
+def game_team(meta: dict, final_score: int) -> dict:
+    """The compact team block embedded in a Game file."""
+    return {
+        "id": meta["id"],
+        "name": meta["name"],
+        "logo": meta["logo"],
+        "color": meta["primaryColor"],
+        "finalScore": final_score,
     }
 
 
@@ -444,137 +528,114 @@ def main() -> None:
     ap.add_argument("--clean", action="store_true", help="wipe the output dir first")
     args = ap.parse_args()
 
-    seasons = sorted(args.seasons)
+    seasons = sorted(set(args.seasons))
     out: Path = args.out
+    # The team layer describes the most recent season in range.
+    current = seasons[-1]
+
     if args.clean and out.exists():
         shutil.rmtree(out)
 
-    print(f"Building seasons {seasons[0]}-{seasons[-1]} -> {out}")
+    print(f"Seasons {seasons[0]}-{seasons[-1]}; team layer = {current} -> {out}")
 
-    # Schedules cover one extra prior season so every season has a prior record.
-    span = list(range(seasons[0] - 1, seasons[-1] + 1))
-    schedules = nfl.load_schedules(seasons=span)
-    live_abbrs = {
+    # Pull one extra prior season so `lastSeason` exists for the team layer.
+    schedules = nfl.load_schedules(seasons=list(range(seasons[0] - 1, seasons[-1] + 1)))
+    live = {
         fix_abbr(a)
         for a in set(schedules["home_team"].to_list()) | set(schedules["away_team"].to_list())
         if a
     }
-    team_meta = build_team_meta(live_abbrs)
+    team_meta = build_team_meta(live)
     records = build_season_records(schedules)
-    print(f"  {len(team_meta)} teams, {len(schedules)} scheduled games")
+    print(f"  {len(team_meta)} teams")
 
     total_bytes = 0
-    games_written = 0
-    season_meta = []
+    games_index: list[dict] = []
+    game_sizes: list[int] = []
 
+    # ---- game layer: every season ----
     for season in seasons:
-        print(f"\n[{season}]")
         sched = schedules.filter(
             (pl.col("season") == season) & pl.col("home_score").is_not_null()
         )
         summaries = [game_summary(r) for r in sched.iter_rows(named=True)]
-        rec = records.get(season, {})
-        prior = records.get(season - 1, {})
 
         pbp = nfl.load_pbp(seasons=[season])
-        print(f"  pbp: {len(pbp):,} rows, {pbp['game_id'].n_unique()} games")
-        stat_lines = build_stat_lines(pbp, rec)
-        rosters = build_rosters(season)
-        depth = build_depth_charts(season)
-        draft = build_draft(season)
-
-        # ---- per-game replay files ----
         by_game = dict(pbp.partition_by("game_id", as_dict=True, include_key=True))
-        for summary in summaries:
-            gid = summary["gameId"]
-            key = (gid,)
-            frame = by_game.get(key)
+
+        written = 0
+        for s in summaries:
+            frame = by_game.get((s["gameId"],))
             if frame is None or frame.is_empty():
                 continue
             plays = build_plays(frame)
             if not plays:
                 continue
-            home, away = summary["home"], summary["away"]
-            game = {
-                **summary,
-                "home": {
-                    **team_meta[home],
-                    "finalScore": summary["homeScore"],
-                },
-                "away": {
-                    **team_meta[away],
-                    "finalScore": summary["awayScore"],
-                },
+            size = write_json(out / "game" / f"{s['gameId']}.json", {
+                "gameId": s["gameId"],
+                "season": s["season"],
+                "week": s["week"],
+                "date": s["date"],
+                "home": game_team(team_meta[s["home"]], s["homeScore"]),
+                "away": game_team(team_meta[s["away"]], s["awayScore"]),
                 "plays": plays,
-                "keyPlayCount": sum(1 for p in plays if p["isKeyPlay"]),
-            }
-            total_bytes += write_json(out / "game" / f"{gid}.json", game)
-            games_written += 1
-
-        # ---- teams index ----
-        index = []
-        for team_id, meta in sorted(team_meta.items()):
-            r = rec.get(team_id)
-            if not r:
-                continue
-            p = prior.get(team_id)
-            index.append({
-                **meta,
-                "season": season,
-                "record": {"wins": r["wins"], "losses": r["losses"], "ties": r["ties"]},
-                "priorSeason": (
-                    {"wins": p["wins"], "losses": p["losses"], "ties": p["ties"]} if p else None
-                ),
-                "projectedWins": clean(r["expectedWins"]),
-                "pointsFor": r["pointsFor"],
-                "pointsAgainst": r["pointsAgainst"],
-                "pointDiff": r["pointsFor"] - r["pointsAgainst"],
-                "gamesPlayed": r["gamesPlayed"],
             })
-        total_bytes += write_json(out / str(season) / "teams-index.json", index)
+            total_bytes += size
+            game_sizes.append(size)
+            games_index.append(s)
+            written += 1
 
-        # ---- games index ----
-        total_bytes += write_json(out / str(season) / "games-index.json", summaries)
+        print(f"  [{season}] {len(pbp):,} pbp rows -> {written} game files")
 
-        # ---- per-team files ----
-        for entry in index:
-            team_id = entry["id"]
-            team_games = [
-                s for s in summaries if s["home"] == team_id or s["away"] == team_id
-            ]
-            team_games.sort(key=lambda s: (s["week"], s["date"] or ""))
-            total_bytes += write_json(
-                out / str(season) / "team" / f"{team_id}.json",
-                {
-                    **entry,
-                    "roster": rosters.get(team_id, []),
-                    "depthChart": depth.get(team_id, {}),
-                    "draftClass": draft.get(team_id, []),
-                    "stats": stat_lines.get(team_id, {}),
-                    "games": team_games,
-                },
-            )
+    total_bytes += write_json(out / "games-index.json", games_index)
 
-        season_meta.append({
-            "season": season,
-            "teams": len(index),
-            "games": len(summaries),
+    # ---- team layer: the current season only ----
+    print(f"\n  team layer [{current}]")
+    pbp_now = nfl.load_pbp(seasons=[current])
+    rec_now = records.get(current, {})
+    stat_lines = build_stat_lines(pbp_now, rec_now)
+    rosters, by_id = build_rosters(current)
+    depth = build_depth_charts(current, by_id)
+    draft = build_draft(current)
+    prior = records.get(current - 1, {})
+    current_game_ids = {s["gameId"] for s in games_index if s["season"] == current}
+
+    teams_index: list[dict] = []
+    for team_id in sorted(team_meta):
+        rec = rec_now.get(team_id)
+        if not rec:
+            continue
+        p = prior.get(team_id, {"wins": 0, "losses": 0, "ties": 0})
+        teams_index.append({
+            **team_meta[team_id],
+            "lastSeason": {"wins": p["wins"], "losses": p["losses"], "ties": p["ties"]},
+            "projectedWins": num(rec["expectedWins"], 2),
         })
-        print(f"  wrote {len(index)} teams, {len(summaries)} games")
 
-    write_json(out / "seasons.json", {
-        "seasons": season_meta,
-        "generatedAt": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "source": "nflverse (https://github.com/nflverse), CC BY 4.0",
-        "projectedWins": (
-            "Market-implied expected wins: each game's closing spread converted to a "
-            f"win probability via the normal CDF (sigma={MARGIN_SIGMA}), summed over the season."
-        ),
-    })
+    total_bytes += write_json(out / "teams-index.json", teams_index)
 
+    for summary in teams_index:
+        team_id = summary["id"]
+        team_games = sorted(
+            (s for s in games_index
+             if s["season"] == current
+             and (s["home"] == team_id or s["away"] == team_id)
+             and s["gameId"] in current_game_ids),
+            key=lambda s: (s["week"], s["date"]),
+        )
+        total_bytes += write_json(out / "team" / f"{team_id}.json", {
+            **summary,
+            "roster": rosters.get(team_id, []),
+            "depthChart": depth.get(team_id, {}),
+            "draftClass": draft.get(team_id, []),
+            "stats": stat_lines.get(team_id, {}),
+            "games": team_games,
+        })
+
+    avg = sum(game_sizes) / len(game_sizes) / 1024 if game_sizes else 0
     print(
-        f"\nDone. {games_written} game files, "
-        f"{total_bytes / 1_048_576:.1f} MB total in {out}"
+        f"\nDone. {len(teams_index)} teams, {len(games_index)} games, "
+        f"{total_bytes / 1_048_576:.1f} MB total, avg game file {avg:.1f} KB"
     )
 
 
