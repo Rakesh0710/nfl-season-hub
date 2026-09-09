@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ETL
+etl/.venv/
+etl/__pycache__/
+.nflreadpy_cache/

@@ -1,0 +1,4 @@
+nflreadpy>=0.1.5
+polars>=1.30
+pandas>=2.2
+pyarrow>=17
