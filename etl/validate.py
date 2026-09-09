@@ -68,8 +68,8 @@ GAME_TEAM = {
 }
 GAME = {
     "gameId": (str, True), "season": (int, True), "week": (int, True),
-    "date": (str, True), "home": (dict, True), "away": (dict, True),
-    "plays": (list, True),
+    "date": (str, True), "gameType": (str, True),
+    "home": (dict, True), "away": (dict, True), "plays": (list, True),
 }
 PLAY = {
     "playId": (int, True), "quarter": (int, True), "clockSeconds": (int, True),
@@ -130,11 +130,62 @@ def load(path: Path):
     return data
 
 
+def check_contract_drift(types_file: Path) -> None:
+    """
+    The schemas above are a hand-written mirror of src/types/nfl.ts. If the two
+    drift apart, every other check here silently validates the wrong shape, so
+    the agreement is itself verified.
+    """
+    if not types_file.exists():
+        fail(f"{types_file}: not found; cannot verify the TypeScript contract")
+        return
+    ts = types_file.read_text(encoding="utf-8")
+
+    def ts_fields(name: str):
+        # The negative lookahead matters: "Game" would otherwise prefix-match
+        # "GameSummary" and compare the wrong interface.
+        m = re.search(
+            rf"export interface {name}(?![A-Za-z0-9_])[^{{]*\{{(.*?)\n\}}", ts, re.S
+        )
+        if not m:
+            return None
+        found = {}
+        for line in m.group(1).splitlines():
+            line = re.sub(r"//.*", "", line).strip()
+            f = re.match(r"(\w+)(\??):", line)
+            if f:
+                found[f.group(1)] = f.group(2) == ""
+        return found
+
+    for iface, schema in (
+        ("TeamSummary", TEAM_SUMMARY), ("Player", PLAYER), ("DraftPick", DRAFT_PICK),
+        ("TeamStatLine", STAT_LINE), ("GameSummary", GAME_SUMMARY),
+        ("GamePlay", PLAY), ("GameTeam", GAME_TEAM), ("Game", GAME),
+    ):
+        declared = ts_fields(iface)
+        if declared is None:
+            fail(f"src/types/nfl.ts: interface {iface} not found")
+            continue
+        mine = {k: req for k, (_t, req) in schema.items()}
+        for key in sorted(set(declared) | set(mine)):
+            if key not in declared:
+                fail(f"contract drift: validator has '{iface}.{key}', nfl.ts does not")
+            elif key not in mine:
+                fail(f"contract drift: nfl.ts has '{iface}.{key}', validator does not")
+            elif declared[key] != mine[key]:
+                fail(
+                    f"contract drift: '{iface}.{key}' required={declared[key]} in nfl.ts "
+                    f"but required={mine[key]} in the validator"
+                )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", type=Path, default=Path("public/data"))
     args = ap.parse_args()
     data: Path = args.data
+
+    check_contract_drift(Path("src/types/nfl.ts"))
 
     # ---------- teams-index ----------
     teams_index = load(data / "teams-index.json")
@@ -215,6 +266,7 @@ def main() -> int:
             if isinstance(game.get(side), dict):
                 check_shape(f"{where}.{side}", game[side], GAME_TEAM)
 
+        sides = {game.get("home", {}).get("id"), game.get("away", {}).get("id")}
         plays = game.get("plays")
         if not isinstance(plays, list) or not plays:
             fail(f"{where}: no plays")
@@ -228,8 +280,25 @@ def main() -> int:
                 fail(f"{where} play {p.get('playId')}: homeWinProb is not numeric")
             elif math.isnan(wp) or math.isinf(wp) or not 0.0 <= wp <= 1.0:
                 fail(f"{where} play {p.get('playId')}: homeWinProb {wp} outside 0..1")
-            if p.get("quarter", 0) <= 4 and not 0 <= p.get("clockSeconds", -1) <= 900:
-                fail(f"{where} play {p.get('playId')}: clockSeconds {p.get('clockSeconds')} outside 0..900")
+            # Regulation quarters are 900s; overtime is 600 in the regular
+            # season and 900 in the playoffs.
+            limit = 900 if p.get("quarter", 0) <= 4 else (
+                600 if game.get("gameType") == "REG" else 900
+            )
+            if not 0 <= p.get("clockSeconds", -1) <= limit:
+                fail(
+                    f"{where} play {p.get('playId')}: clockSeconds "
+                    f"{p.get('clockSeconds')} outside 0..{limit}"
+                )
+            # `distance` is only meaningful alongside a `down`.
+            if "distance" in p and "down" not in p:
+                fail(f"{where} play {p.get('playId')}: has 'distance' but no 'down'")
+            # every possession must belong to one of the two teams in THIS game
+            if p.get("posteam") not in sides:
+                fail(
+                    f"{where} play {p.get('playId')}: posteam {p.get('posteam')!r} "
+                    f"is not one of {sorted(sides)}"
+                )
 
         # check 6: chronological order — quarter ascending, clock descending
         for a, b in zip(plays, plays[1:]):
@@ -312,7 +381,7 @@ def main() -> int:
 
     print(
         f"\nOK — 32 teams, {len(game_files)} games, {len(games_index)} indexed. "
-        "All 9 checks pass; data matches the TypeScript contract."
+        "All checks pass; data matches the TypeScript contract."
     )
     return 0
 

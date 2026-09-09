@@ -105,7 +105,8 @@ def num(value, digits: int = 4) -> float | None:
         return None
     if math.isnan(f) or math.isinf(f):
         return None
-    return round(f, digits)
+    result = round(f, digits)
+    return 0.0 if result == 0 else result  # collapse -0.0
 
 
 def whole(value) -> int | None:
@@ -463,6 +464,7 @@ def build_plays(game_pbp: pl.DataFrame) -> list[dict]:
         max_home = max(max_home, whole(r["total_home_score"]) or 0)
         max_away = max(max_away, whole(r["total_away_score"]) or 0)
 
+        down = whole(r.get("down"))
         is_key = (
             swing >= KEY_PLAY_WP_SWING
             or bool(r.get("touchdown"))
@@ -478,8 +480,11 @@ def build_plays(game_pbp: pl.DataFrame) -> list[dict]:
             "homeWinProb": wp,
             "scoreHome": max_home,
             "scoreAway": max_away,
-            "down": whole(r.get("down")),
-            "distance": whole(r.get("ydstogo")),
+            "down": down,
+            # Yards to go is only meaningful when there IS a down. Kickoffs and
+            # extra points carry ydstogo=0, which would otherwise emit a
+            # meaningless `distance: 0` with no accompanying `down`.
+            "distance": whole(r.get("ydstogo")) if down is not None else None,
             "posteam": text(fix_abbr(r.get("posteam"))),
             "playType": text(r.get("play_type")),
             "description": text(r.get("desc"))[:MAX_DESCRIPTION],
@@ -576,6 +581,7 @@ def main() -> None:
                 "season": s["season"],
                 "week": s["week"],
                 "date": s["date"],
+                "gameType": s["gameType"],
                 "home": game_team(team_meta[s["home"]], s["homeScore"]),
                 "away": game_team(team_meta[s["away"]], s["awayScore"]),
                 "plays": plays,

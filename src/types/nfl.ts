@@ -102,15 +102,21 @@ export interface GamePlay {
   playId: number
   quarter: number
   /**
-   * Seconds remaining in `quarter`, counting down (900 at the start of a
-   * regulation quarter, 600 at the start of overtime, 0 at its end).
+   * Seconds remaining in `quarter`, counting down. 900 at the start of a
+   * regulation quarter; 0 at its end.
    *
-   * For a whole-game timeline axis, elapsed seconds are derived as:
-   *   quarter <= 4 -> (quarter - 1) * 900 + (900 - clockSeconds)
-   *   quarter >= 5 -> 3600 + (quarter - 5) * 600 + (600 - clockSeconds)
+   * Overtime length depends on the game: 600 seconds in the regular season,
+   * 900 in the postseason. Use the game's `gameType` to pick, via
+   * `overtimeLength()` below — do NOT assume 600, or postseason overtime will
+   * compute an elapsed time earlier than the end of regulation.
    */
   clockSeconds: number
-  /** 0..1 — the home team's win probability; the value the replay animates. */
+  /**
+   * 0..1 — the home team's win probability BEFORE this play is run
+   * (pre-snap). The replay animates this value, so the curve shows the state
+   * going into each play; the final play therefore need not sit at exactly
+   * 0 or 1 when a game ends on a walk-off score.
+   */
   homeWinProb: number
   scoreHome: number
   scoreAway: number
@@ -138,8 +144,27 @@ export interface Game {
   season: number
   week: number
   date: string
+  /** Needed to interpret overtime length; see `overtimeLength()`. */
+  gameType: GameType
   home: GameTeam
   away: GameTeam
   /** Chronological: quarter ascending, then game clock descending. */
   plays: GamePlay[]
+}
+
+/** Overtime period length in seconds: 10 minutes in the regular season, 15 in the playoffs. */
+export function overtimeLength(gameType: GameType): number {
+  return gameType === 'REG' ? 600 : 900
+}
+
+/**
+ * Seconds elapsed since kickoff, for positioning a play on a whole-game
+ * timeline. Regulation quarters are 900 seconds; overtime varies by gameType.
+ */
+export function elapsedSeconds(play: GamePlay, gameType: GameType): number {
+  if (play.quarter <= 4) {
+    return (play.quarter - 1) * 900 + (900 - play.clockSeconds)
+  }
+  const ot = overtimeLength(gameType)
+  return 3600 + (play.quarter - 5) * ot + (ot - play.clockSeconds)
 }

@@ -1,4 +1,10 @@
-nflreadpy>=0.1.5
-polars>=1.30
-pandas>=2.2
-pyarrow>=17
+# Pinned exactly: `nflreadpy` is pre-1.0 and its loaders have already changed
+# shape once (the 2025 depth-chart schema), so a floating range would make this
+# pipeline silently non-reproducible.
+nflreadpy==0.1.5
+polars==1.44.2
+pyarrow==25.0.1
+
+# NOTE: pandas is intentionally absent. nflreadpy returns polars DataFrames
+# natively, so every transform here is polars; adding pandas would mean
+# converting frames back and forth for no benefit. Nothing imports it.

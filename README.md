@@ -99,7 +99,7 @@ etl/            Python ETL (own virtualenv)
 ## Data
 
 Six seasons, 2020-2025: **1,693 games and 273,325 plays**, plus a 32-team layer for the current
-season. 1,727 files, 76.5 MB, which packs to ~13 MB in git. A game file averages 46 KB raw but
+season. 1,727 files, 76.9 MB, which packs to ~13 MB in git. A game file averages 46 KB raw but
 **6.6 KB gzipped**, so a replay loads on demand without a backend.
 
 `etl/validate.py` enforces the TypeScript contract on every generated file and is itself verified

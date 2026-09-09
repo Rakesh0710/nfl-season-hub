@@ -56,7 +56,10 @@ Whole-game time is deliberately _not_ stored, to keep game files to the contract
 ## Missing-data decisions
 
 - Optional contract fields (`number?`, `age?`, `college?`, `status?`, `down?`, `distance?`, `epa?`)
-  are **omitted entirely** when unknown. `null` does not satisfy `number | undefined` under strict
+  are **omitted entirely** when unknown.
+- `distance` is emitted only alongside a `down`. Kickoffs and extra points carry `ydstogo = 0`
+  upstream, which would otherwise produce a meaningless `distance: 0` with no down.
+- `-0.0` is collapsed to `0.0`. `null` does not satisfy `number | undefined` under strict
   TypeScript, so an absent key is the only encoding that typechecks.
 - Required string fields fall back to `""`, never `null` — a few draft picks have no listed
   position or college.
@@ -95,12 +98,23 @@ Things that cost real time to discover:
   still get replays. Including playoff plays had inflated KC's 2023 offense to 444 yds/game against
   an official 344.
 - 2020 had 16-game regular seasons; BUF and CIN played 16 in 2022 (the cancelled game).
+- **Postseason overtime is 15 minutes, regular-season overtime is 10.** Both appear in the data.
+- `load_rosters` returns the **full season roster**, including players later cut (`status: "CUT"`),
+  so a team carries 95-110 players rather than a 53-man active roster.
+- **polars, not pandas.** `nflreadpy` returns polars frames natively, so every transform here is
+  polars and pandas is not a dependency. Converting frames back to pandas would add cost and no
+  benefit.
 
 ## Validation
 
 `validate.py` covers the nine required checks and refuses to pass on extra or misspelled fields.
-It is verified by fault injection: 12 deliberate corruptions (missing team, duplicate id, null
-optional, malformed game id, out-of-range win probability, shuffled plays, dangling game
-reference, `NaN`, wrong type, unexpected field) were each caught.
+It also verifies that its own schemas still agree with `src/types/nfl.ts`, because those schemas
+are a hand-written mirror: if the two drift, every other check silently validates the wrong shape.
+
+The suite is verified by fault injection — **16 deliberate corruptions, 16 caught**: missing team,
+duplicate team id, missing required field, null in an optional slot, malformed game id, duplicate
+game id, out-of-range win probability, shuffled play order, dangling game reference, literal `NaN`,
+wrong runtime type, unexpected field, `distance` without `down`, a `posteam` not in the game, an
+overtime clock exceeding its game type, and a missing `gameType`.
 
 Data from [nflverse](https://github.com/nflverse), CC BY 4.0.
