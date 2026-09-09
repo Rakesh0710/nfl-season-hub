@@ -36,7 +36,7 @@ nflverse (raw play-by-play, rosters, draft, win totals)
 
 | Layer         | Choice                                | Why                                         |
 | ------------- | ------------------------------------- | ------------------------------------------- |
-| Data source   | nflverse (`nfl_data_py`)              | Free, open, CC BY 4.0, 1999–2025            |
+| Data source   | nflverse (`nflreadpy`)                | Free, open, CC BY 4.0, 1999–2025            |
 | ETL           | Python + pandas                       | Raw play-by-play → small, typed JSON        |
 | Framework     | React + TypeScript + Vite             | Fast dev; TS as the data contract           |
 | Routing       | React Router                          | Powers the League → Team → Game hierarchy   |
@@ -72,7 +72,7 @@ etl/            Python ETL (own virtualenv)
 ## Build progress
 
 - [x] **Stage 0** — Foundations & setup
-- [ ] **Stage 1** — Data layer (ETL)
+- [x] **Stage 1** — Data layer (ETL)
 - [ ] **Stage 2** — App shell & routing
 - [ ] **Stage 3** — League dashboard
 - [ ] **Stage 4** — Team page
@@ -86,6 +86,21 @@ etl/            Python ETL (own virtualenv)
   an existing codebase costs more than writing under it from the start.
 - **oxlint over ESLint** — it is what `create-vite` now scaffolds by default; same role, faster.
 - **Tailwind v4 via the Vite plugin** — no `tailwind.config.js`; theme lives in CSS via `@theme`.
+- **`nflreadpy` instead of `nfl_data_py`** — the latter is deprecated upstream and pins
+  `pandas<2`/`numpy<2`, which have no Python 3.12 wheel, so it will not install on a current
+  interpreter.
+- **`projectedWins` is market-implied, not a Vegas over/under** — the nflverse win-totals dataset
+  was discontinued after 2020. Each game's closing spread is converted to a win probability and
+  summed across the regular season, which covers all six seasons instead of one.
+- **Data is validated, not assumed** — `etl/validate.py` checks all 1,693 games against the
+  TypeScript contract and caught four real defects (non-chronological `play_id`, timeout rows with
+  stale scores, playoff games inflating per-game rates, and a 2025 depth-chart schema change).
+
+## Data
+
+Six seasons, 2020-2025: 1,693 games, 32 teams per season. Roughly 90 MB of JSON, which packs to
+~15 MB in git and serves at about 7 KB gzipped per game, so a replay loads on demand without a
+backend. See [etl/README.md](etl/README.md) for the dataset quirks worth knowing.
 
 ## Attribution
 
