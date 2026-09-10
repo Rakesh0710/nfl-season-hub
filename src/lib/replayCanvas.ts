@@ -36,7 +36,8 @@ const COLOR = {
   even: '#525252', // neutral-600 — the 50% line
   label: '#737373', // neutral-500
   cursorLine: '#404040', // neutral-700
-  surface: '#0a0a0a', // the page behind the card, used as the cursor dot's ring
+  surface: '#0a0a0a', // the page behind the card: the cursor dot's ring, and the key-play beads
+  hover: '#e5e5e5', // neutral-200 — the pointer's own hairline
 }
 
 const Y_TICKS = [0, 0.25, 0.5, 0.75, 1]
@@ -229,6 +230,65 @@ function drawCurve(
   ctx.restore()
 }
 
+/**
+ * The plays the ETL flagged, as beads on the line: filled with the surface
+ * colour and ringed in the accent, so they read as markers rather than as part
+ * of the curve. Only revealed ones are drawn — the timeline below the chart
+ * carries the full set, which is what navigating by key play uses.
+ */
+function drawKeyPlays(
+  ctx: CanvasRenderingContext2D,
+  points: ChartPoint[],
+  keyIndices: readonly number[],
+  cursor: number,
+  lastIndex: number,
+  plot: Plot,
+  color: string,
+): void {
+  ctx.save()
+  ctx.lineWidth = 1.5
+  ctx.strokeStyle = color
+  ctx.fillStyle = COLOR.surface
+  for (const index of keyIndices) {
+    // Ascending, so the first one past the cursor ends the loop.
+    if (index > cursor) break
+    const x = xForIndex(index, lastIndex, plot)
+    const y = yForProb(points[index].homeWinProb, plot)
+    ctx.beginPath()
+    ctx.arc(x, y, 3, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.stroke()
+  }
+  ctx.restore()
+}
+
+/** The play under the pointer: a hairline and a hollow dot, drawn over everything. */
+function drawHover(
+  ctx: CanvasRenderingContext2D,
+  points: ChartPoint[],
+  index: number,
+  lastIndex: number,
+  plot: Plot,
+): void {
+  const x = xForIndex(index, lastIndex, plot)
+  const y = yForProb(points[index].homeWinProb, plot)
+  ctx.save()
+  ctx.beginPath()
+  ctx.setLineDash([2, 3])
+  ctx.moveTo(crisp(x), plot.y)
+  ctx.lineTo(crisp(x), plot.y + plot.height)
+  ctx.strokeStyle = COLOR.hover
+  ctx.lineWidth = 1
+  ctx.stroke()
+  ctx.setLineDash([])
+  ctx.beginPath()
+  ctx.arc(x, y, 4, 0, Math.PI * 2)
+  ctx.strokeStyle = COLOR.hover
+  ctx.lineWidth = 1.5
+  ctx.stroke()
+  ctx.restore()
+}
+
 /** Where the replay currently is: a dropped vertical line and a dot on the curve. */
 function drawCursor(
   ctx: CanvasRenderingContext2D,
@@ -267,6 +327,10 @@ export interface FrameOptions {
   marks: { at: number; label: string }[]
   /** Fractional play index revealed so far, 0..points.length - 1. */
   cursor: number
+  /** Ascending indices of plays the ETL flagged with `isKeyPlay`. */
+  keyIndices: readonly number[]
+  /** The play under the pointer, or null. */
+  hover: number | null
   /** The home team's accent, already checked for contrast by `accentOn`. */
   color: string
   size: Size
@@ -283,5 +347,23 @@ export function drawFrame(ctx: CanvasRenderingContext2D, options: FrameOptions):
   drawBackground(ctx, plot, marks, lastIndex)
   if (points.length === 0) return
   drawCurve(ctx, points, cursor, lastIndex, plot, color)
+  drawKeyPlays(ctx, points, options.keyIndices, cursor, lastIndex, plot, color)
   drawCursor(ctx, cursor, probAt(points, cursor), lastIndex, plot, color)
+  if (options.hover !== null && options.hover >= 0 && options.hover <= lastIndex) {
+    drawHover(ctx, points, options.hover, lastIndex, plot)
+  }
+}
+
+/**
+ * Which play sits under an x offset inside the canvas, or null when the pointer
+ * is outside the plot. The inverse of `xForIndex`, and the only thing pointer
+ * handling needs — it takes the offset the event already carries, so hovering
+ * never measures the DOM.
+ */
+export function indexAtOffset(offsetX: number, lastIndex: number, size: Size): number | null {
+  const plot = plotArea(size)
+  if (plot.width <= 0 || lastIndex <= 0) return null
+  const fraction = (offsetX - plot.x) / plot.width
+  if (fraction < -0.01 || fraction > 1.01) return null
+  return Math.min(lastIndex, Math.max(0, Math.round(fraction * lastIndex)))
 }

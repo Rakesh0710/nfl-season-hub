@@ -76,7 +76,7 @@ etl/            Python ETL (own virtualenv)
 - [x] **Stage 2** — App shell & routing
 - [x] **Stage 3** — League dashboard
 - [x] **Stage 4** — Team page
-- [ ] **Stage 5** — Game replay engine (5A static chart ✓, 5B canvas playback ✓, 5C transport ✓)
+- [ ] **Stage 5** — Game replay engine (5A chart ✓, 5B canvas ✓, 5C transport ✓, 5D context ✓)
 - [ ] **Stage 6** — Polish & cross-cutting
 - [ ] **Stage 7** — Engineering credibility layer
 
@@ -199,6 +199,30 @@ each write in turn on one build: moving the thumb costs about 10ms of layout per
 refilling the track about 17ms of style recalculation. Skipping writes finer than a thousandth of
 the track — under a pixel at any width this control gets — cut both by roughly a third, to 39
 layouts and 37 style recalculations a second, with no visible change to the thumb.
+
+### Game context and key plays
+
+`isKeyPlay` is the whole definition of a key play — a score, a turnover, or a win-probability swing
+of at least ten points, decided once in `etl/build_data.py`. The UI reads the flag and never
+applies a rule of its own, so the beads drawn on the curve and the markers on the timeline can
+never disagree about which plays matter. Checked against the source across four games: marker count
+and marker position match `isKeyPlay` exactly, 84 of them.
+
+A game carries fifteen key plays on average and up to forty-one, so the marker rail is a single tab
+stop with the arrow keys walking it, rather than forty-one stops between the scrubber and the Play
+button. It sits below the track rather than on it, because markers laid over the scrubber would eat
+the drag area that is the scrubber's main job.
+
+The context box is ordered by what a reader needs first: clock and score, then down, distance and
+possession, then the description, and only then win probability and EPA in the smallest, quietest
+type. Down and distance are dropped entirely when the play has none — 26,227 plays across the six
+seasons are kickoffs and the like — rather than printed as a placeholder that would read as missing
+data instead of inapplicable.
+
+Hovering the canvas draws a hairline and a compact tooltip; clicking seeks there. The pointer's
+offset comes from the event, so hovering never measures the DOM, and the hovered play reaches React
+only when it changes to a different play. Measured while playing at 2x with the pointer sweeping the
+plot at 60 moves a second: **59.9fps unthrottled, 59.5fps with the CPU throttled 6x**.
 
 Recharts was the Stage 5A baseline and is no longer shipped. It survives as a development-only
 reference at `/game/<id>?baseline=1` under `npm run dev`, behind an `import.meta.env.DEV` branch

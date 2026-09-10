@@ -12,8 +12,10 @@
  */
 
 import { useRef } from 'react'
-import { accentOn, readableTextOn } from '@/lib/colors'
-import { PLOT_PADDING } from '@/lib/replayCanvas'
+import KeyPlayRail from '@/components/KeyPlayRail'
+import PlayContext from '@/components/PlayContext'
+import { accentOn } from '@/lib/colors'
+import { indexAtOffset, PLOT_PADDING } from '@/lib/replayCanvas'
 import { clockLabel, periodLabel } from '@/lib/winprob'
 import { SPEEDS, useReplay } from '@/lib/useReplay'
 import type { Game, GamePlay } from '@/types/nfl'
@@ -47,13 +49,41 @@ const KEY_JUMP: Record<string, number> = {
 export default function WinProbCanvas({ game }: { game: Game }) {
   const color = accentOn(SURFACE, game.home.color, '#a3a3a3')
   const replay = useReplay(game, color)
-  const { canvasRef, sliderRef, playing, playIndex, lastIndex, speed } = replay
+  const { canvasRef, sliderRef, playing, playIndex, lastIndex, speed, keyIndices, hoverIndex } =
+    replay
 
   // Whether a drag interrupted playback that should pick up again on release.
   const resumeAfterScrub = useRef(false)
 
   const play = game.plays[playIndex]
+  const hovered = hoverIndex === null ? null : game.plays[hoverIndex]
   const finished = !playing && playIndex >= lastIndex
+
+  /**
+   * Where the pointer is, as a percentage across the plot.
+   *
+   * Held away from the edges so a tooltip centred on it stays inside the card.
+   * The hairline drawn on the canvas is always exact; only the label is nudged.
+   */
+  const hoverLeft =
+    hoverIndex === null
+      ? 0
+      : Math.min(88, Math.max(12, (hoverIndex / Math.max(1, lastIndex)) * 100))
+
+  /** Only a mouse hovers. A touch gets tap-to-seek, with no tooltip to dismiss. */
+  function onPointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (event.pointerType !== 'mouse') return
+    replay.hoverAt(event.nativeEvent.offsetX)
+  }
+
+  function onCanvasClick(event: React.MouseEvent<HTMLCanvasElement>) {
+    const canvas = event.currentTarget
+    const index = indexAtOffset(event.nativeEvent.offsetX, lastIndex, {
+      width: canvas.clientWidth,
+      height: canvas.clientHeight,
+    })
+    if (index !== null) replay.seek(index)
+  }
 
   function beginScrub() {
     // Playback is suspended for the length of a drag: letting the cursor run
@@ -96,21 +126,54 @@ export default function WinProbCanvas({ game }: { game: Game }) {
       {/* The canvas is sized entirely by CSS. resizeCanvas reads that size back
           and matches the backing store to it, so the element must not carry
           width/height attributes of its own. */}
-      <div className="h-64 w-full sm:h-80">
+      <div className="relative h-64 w-full sm:h-80">
         <canvas
           ref={canvasRef}
           role="img"
-          aria-label={`Win probability line for ${game.home.name} against ${game.away.name}, one point per play. Final score ${game.home.id} ${game.home.finalScore}, ${game.away.id} ${game.away.finalScore}.`}
-          className="block h-full w-full"
+          aria-label={`Win probability line for ${game.home.name} against ${game.away.name}, one point per play, with ${keyIndices.length} key plays marked. Final score ${game.home.id} ${game.home.finalScore}, ${game.away.id} ${game.away.finalScore}.`}
+          className="block h-full w-full cursor-crosshair"
+          onPointerMove={onPointerMove}
+          onPointerLeave={() => replay.hoverAt(null)}
+          onClick={onCanvasClick}
         />
+        {hovered && (
+          // Inset to the plot so the label sits over the point the hairline
+          // marks. Decorative: the same play is one keyboard step away on the
+          // scrubber, which announces it properly.
+          <div
+            aria-hidden
+            className="pointer-events-none absolute"
+            style={{
+              left: PLOT_PADDING.left,
+              right: PLOT_PADDING.right,
+              top: PLOT_PADDING.top,
+              bottom: PLOT_PADDING.bottom,
+            }}
+          >
+            <div
+              className={`absolute max-w-48 -translate-x-1/2 rounded-md border border-neutral-700 bg-neutral-950/95 px-2 py-1.5 text-[11px] whitespace-nowrap text-neutral-300 tabular-nums shadow-lg ${
+                hovered.homeWinProb > 0.5 ? 'bottom-0' : 'top-0'
+              }`}
+              style={{ left: `${hoverLeft}%` }}
+            >
+              <span className="text-neutral-400">
+                {periodLabel(hovered.quarter)} {clockLabel(hovered.clockSeconds)}
+              </span>
+              <span className="mx-1.5 text-neutral-700">|</span>
+              <span className="font-semibold text-neutral-100">
+                {game.away.id} {hovered.scoreAway}–{hovered.scoreHome} {game.home.id}
+              </span>
+              <span className="mx-1.5 text-neutral-700">|</span>
+              <span style={{ color }}>{Math.round(hovered.homeWinProb * 100)}%</span>
+              {hovered.isKeyPlay && <span className="ml-1.5 text-amber-300">Key</span>}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Inset to the plot, not the card, so the thumb sits under the cursor
-          line drawn on the canvas above it. */}
-      <div
-        style={{ marginLeft: PLOT_PADDING.left, marginRight: PLOT_PADDING.right, color }}
-        className="-mb-1"
-      >
+      {/* Inset to the plot, not the card, so the thumb and the key-play markers
+          line up with the curve drawn above them. */}
+      <div style={{ marginLeft: PLOT_PADDING.left, marginRight: PLOT_PADDING.right, color }}>
         <input
           ref={sliderRef}
           type="range"
@@ -126,6 +189,13 @@ export default function WinProbCanvas({ game }: { game: Game }) {
           onPointerDown={beginScrub}
           onPointerUp={endScrub}
           onPointerCancel={endScrub}
+        />
+        <KeyPlayRail
+          game={game}
+          keyIndices={keyIndices}
+          currentIndex={playIndex}
+          color={color}
+          onSelect={replay.seek}
         />
       </div>
 
@@ -161,27 +231,7 @@ export default function WinProbCanvas({ game }: { game: Game }) {
         </div>
       </div>
 
-      {/* Fixed height: play descriptions vary from four words to a full
-          sentence, and letting the box grow makes the chart above it jump. */}
-      {play && (
-        <div className="mt-3 min-h-20 rounded-lg border border-neutral-800 bg-neutral-950/60 p-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-neutral-400 tabular-nums">
-            <span>
-              {periodLabel(play.quarter)} {clockLabel(play.clockSeconds)}
-            </span>
-            <span>
-              {game.away.id} {play.scoreAway} – {play.scoreHome} {game.home.id}
-            </span>
-            <span
-              className="rounded px-1.5 py-0.5 font-semibold"
-              style={{ backgroundColor: color, color: readableTextOn(color) }}
-            >
-              {Math.round(play.homeWinProb * 100)}% {game.home.id}
-            </span>
-          </div>
-          <p className="mt-1.5 text-sm text-neutral-200">{play.description}</p>
-        </div>
-      )}
+      {play && <div className="mt-3">{<PlayContext play={play} game={game} color={color} />}</div>}
 
       <p className="mt-2 text-[11px] text-neutral-500">
         Win probability is the pre-snap value going into each play. 50% is even odds; above the

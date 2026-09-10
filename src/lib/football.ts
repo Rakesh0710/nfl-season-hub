@@ -6,7 +6,7 @@
  * to render when the data simply does not have a value.
  */
 
-import type { GameSummary, GameType, Player, TeamRecord } from '@/types/nfl'
+import type { GamePlay, GameSummary, GameType, Player, TeamRecord } from '@/types/nfl'
 
 /** Only what a label needs, so both GameSummary and Game satisfy it. */
 type Scheduled = { week: number; gameType: GameType }
@@ -34,6 +34,21 @@ export function percent(value: number | null | undefined, digits = 1): string {
 }
 
 /** Roster position groups, in the order a depth chart is normally read. */
+const DOWN_NAMES = ['', '1st', '2nd', '3rd', '4th']
+
+/**
+ * "3rd & 7", or null when the play has no down.
+ *
+ * Kickoffs, extra points and the like carry no down, and the ETL omits the
+ * field rather than inventing one — 2,274 key plays across the six seasons have
+ * no down. Callers drop the line entirely rather than print a placeholder.
+ */
+export function downDistance(play: GamePlay): string | null {
+  if (play.down === undefined) return null
+  const name = DOWN_NAMES[play.down] ?? `${play.down}th`
+  return play.distance === undefined ? name : `${name} & ${play.distance}`
+}
+
 export const ROSTER_POSITION_ORDER = [
   'QB',
   'RB',

@@ -53,6 +53,22 @@ export function quarterBoundaries(game: Game): { at: number; label: string }[] {
   return marks
 }
 
+/**
+ * Indices of the plays the ETL marked as key.
+ *
+ * `isKeyPlay` is the whole definition, decided once in `etl/build_data.py`: a
+ * score, a turnover, or a win-probability swing of at least ten points. The UI
+ * reads that flag and never applies a rule of its own, so the markers on the
+ * chart and the markers on the timeline can never mean different things.
+ */
+export function keyPlayIndices(game: Game): number[] {
+  const marks: number[] = []
+  game.plays.forEach((play, index) => {
+    if (play.isKeyPlay) marks.push(index)
+  })
+  return marks
+}
+
 /** "12:04" from seconds remaining in a quarter. */
 export function clockLabel(seconds: number): string {
   const m = Math.floor(seconds / 60)

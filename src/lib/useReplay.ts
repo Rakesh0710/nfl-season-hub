@@ -23,8 +23,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useReducedMotion } from 'framer-motion'
-import { applyCanvasSize, drawFrame, type Size } from '@/lib/replayCanvas'
-import { quarterBoundaries, toChartPoints } from '@/lib/winprob'
+import { applyCanvasSize, drawFrame, indexAtOffset, type Size } from '@/lib/replayCanvas'
+import { keyPlayIndices, quarterBoundaries, toChartPoints } from '@/lib/winprob'
 import type { Game } from '@/types/nfl'
 
 /**
@@ -89,6 +89,12 @@ export interface Replay {
   /** Index of the play the cursor is on. Updated per play, never per frame. */
   playIndex: number
   lastIndex: number
+  /** Ascending indices of the plays the ETL flagged. The UI adds no rule of its own. */
+  keyIndices: number[]
+  /** The play under the pointer, or null. Changes on pointer moves, not on frames. */
+  hoverIndex: number | null
+  /** Report a pointer at an x offset inside the canvas; null when it leaves. */
+  hoverAt: (offsetX: number | null) => void
   speed: Speed
   setSpeed: (speed: Speed) => void
   play: () => void
@@ -110,26 +116,30 @@ export function useReplay(game: Game, color: string): Replay {
 
   const points = useMemo(() => toChartPoints(game), [game])
   const marks = useMemo(() => quarterBoundaries(game), [game])
+  const keyIndices = useMemo(() => keyPlayIndices(game), [game])
   const lastIndex = Math.max(0, points.length - 1)
 
   const [playing, setPlaying] = useLoopValue(false)
   const [playIndex, setPlayIndex] = useLoopValue(0)
   const [speed, setSpeed] = useState<Speed>(1)
+  const [hoverIndex, setHoverIndex] = useLoopValue<number | null>(null)
 
   const cursor = useRef(0)
   // Measured by the ResizeObserver, never inside a frame. See applyCanvasSize.
   const size = useRef<Size>({ width: 0, height: 0 })
   const sliderAt = useRef(-1)
   const sliderPlay = useRef(-1)
+  const hover = useRef<number | null>(null)
+  const paintPending = useRef(0)
   const frame = useRef(0)
   const previousFrameTime = useRef<number | null>(null)
 
   // What to draw, mirrored into a ref so the loop can read the current game and
   // color without being torn down and rebuilt mid-playback. Declared before
   // every other effect so it is already current by the time they run.
-  const scene = useRef({ points, marks, color, lastIndex, speed })
+  const scene = useRef({ points, marks, keyIndices, color, lastIndex, speed })
   useEffect(() => {
-    scene.current = { points, marks, color, lastIndex, speed }
+    scene.current = { points, marks, keyIndices, color, lastIndex, speed }
   })
 
   /**
@@ -146,8 +156,16 @@ export function useReplay(game: Game, color: string): Replay {
     const ctx = canvas?.getContext('2d')
     if (canvas && ctx && size.current.width > 0 && size.current.height > 0) {
       applyCanvasSize(canvas, ctx, size.current)
-      const { points: p, marks: m, color: c } = scene.current
-      drawFrame(ctx, { points: p, marks: m, cursor: cursor.current, color: c, size: size.current })
+      const { points: p, marks: m, keyIndices: k, color: c } = scene.current
+      drawFrame(ctx, {
+        points: p,
+        marks: m,
+        keyIndices: k,
+        cursor: cursor.current,
+        hover: hover.current,
+        color: c,
+        size: size.current,
+      })
     }
     const slider = sliderRef.current
     if (slider) {
@@ -174,12 +192,48 @@ export function useReplay(game: Game, color: string): Replay {
     }
   }, [])
 
-  /** Cancel any pending frame. Safe to call when none is scheduled. */
+  /** Cancel any pending frame, playback or hover. Safe to call when none is scheduled. */
   const stop = useCallback(() => {
     cancelAnimationFrame(frame.current)
+    cancelAnimationFrame(paintPending.current)
     frame.current = 0
+    paintPending.current = 0
     previousFrameTime.current = null
   }, [])
+
+  /**
+   * Repaint once, soon, for something that is not the clock — a hover moving.
+   *
+   * While the replay is running the loop already paints every frame, so this
+   * does nothing; while it is stopped it books a single frame. Either way at
+   * most one animation-frame callback is ever outstanding.
+   */
+  const requestPaint = useCallback(() => {
+    if (frame.current || paintPending.current) return
+    paintPending.current = requestAnimationFrame(() => {
+      paintPending.current = 0
+      render()
+    })
+  }, [render])
+
+  /**
+   * The pointer moved inside the canvas, or left it.
+   *
+   * The offset comes from the event, so hovering never measures the DOM, and
+   * the index is published to React only when it changes to a different play —
+   * a handful of times per pointer sweep rather than once per pointer event.
+   */
+  const hoverAt = useCallback(
+    (offsetX: number | null) => {
+      const next =
+        offsetX === null ? null : indexAtOffset(offsetX, scene.current.lastIndex, size.current)
+      if (next === hover.current) return
+      hover.current = next
+      setHoverIndex(next)
+      requestPaint()
+    },
+    [requestPaint, setHoverIndex],
+  )
 
   // A named function expression, so the body can schedule the next frame with
   // itself: `advance` is bound inside its own scope, where the `const` holding
@@ -310,6 +364,8 @@ export function useReplay(game: Game, color: string): Replay {
     // against the previous game's position.
     sliderAt.current = -1
     sliderPlay.current = -1
+    hover.current = null
+    setHoverIndex(null)
     cursor.current = reduceMotion ? lastIndex : 0
     setPlayIndex(cursor.current)
     if (reduceMotion) {
@@ -321,7 +377,17 @@ export function useReplay(game: Game, color: string): Replay {
     // Cancels the pending frame on unmount, and before this effect re-runs for
     // a different game. Nothing else holds a frame handle.
     return stop
-  }, [game.gameId, lastIndex, reduceMotion, render, setPlayIndex, setPlaying, start, stop])
+  }, [
+    game.gameId,
+    lastIndex,
+    reduceMotion,
+    render,
+    setHoverIndex,
+    setPlayIndex,
+    setPlaying,
+    start,
+    stop,
+  ])
 
   return {
     canvasRef,
@@ -329,6 +395,9 @@ export function useReplay(game: Game, color: string): Replay {
     playing,
     playIndex,
     lastIndex,
+    keyIndices,
+    hoverIndex,
+    hoverAt,
     speed,
     setSpeed,
     play,
