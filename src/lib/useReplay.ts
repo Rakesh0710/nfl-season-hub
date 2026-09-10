@@ -120,6 +120,7 @@ export function useReplay(game: Game, color: string): Replay {
   // Measured by the ResizeObserver, never inside a frame. See applyCanvasSize.
   const size = useRef<Size>({ width: 0, height: 0 })
   const sliderAt = useRef(-1)
+  const sliderPlay = useRef(-1)
   const frame = useRef(0)
   const previousFrameTime = useRef<number | null>(null)
 
@@ -159,8 +160,14 @@ export function useReplay(game: Game, color: string): Replay {
       // the cursor crosses one of those steps about 37 times a second rather
       // than 60.
       const stop = Math.round(fraction * 1000)
-      if (stop !== sliderAt.current) {
+      const play = Math.floor(cursor.current)
+      // A deferred write may leave the thumb a fraction of a pixel behind, but
+      // never a whole play behind: the readout beside it moves the instant the
+      // cursor crosses a boundary, and a deferral that straddles one made the
+      // slider report a different play from the text next to it.
+      if (stop !== sliderAt.current || play !== sliderPlay.current) {
         sliderAt.current = stop
+        sliderPlay.current = play
         slider.value = String(cursor.current)
         slider.style.setProperty('--progress', `${fraction * 100}%`)
       }
@@ -302,6 +309,7 @@ export function useReplay(game: Game, color: string): Replay {
     // different scale, so the skip-if-unchanged test above must not match
     // against the previous game's position.
     sliderAt.current = -1
+    sliderPlay.current = -1
     cursor.current = reduceMotion ? lastIndex : 0
     setPlayIndex(cursor.current)
     if (reduceMotion) {

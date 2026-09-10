@@ -188,6 +188,12 @@ Seeking never changes whether the replay is running: paused stays paused, playin
 the new position. A pointer drag is the exception — playback is suspended while the thumb is held,
 because otherwise the target moves out from under it, and resumes on release.
 
+Deferring a write is allowed to leave the thumb a fraction of a pixel behind, but never a whole
+play behind. The readout moves the instant the cursor crosses a boundary, and a deferral that
+straddled one made the slider report a different play from the text beside it — invisible on
+screen at under a pixel, but a real disagreement between two things that share a source. Sampled
+on every frame in-page, 1,080 frames across all three speeds, the thumb never lags the readout.
+
 Syncing the thumb every frame is the most expensive thing outside the canvas. Measured by neutering
 each write in turn on one build: moving the thumb costs about 10ms of layout per second, and
 refilling the track about 17ms of style recalculation. Skipping writes finer than a thousandth of
