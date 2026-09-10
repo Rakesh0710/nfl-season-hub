@@ -14,14 +14,11 @@
 import { useRef } from 'react'
 import KeyPlayRail from '@/components/KeyPlayRail'
 import PlayContext from '@/components/PlayContext'
-import { accentOn } from '@/lib/colors'
-import { indexAtOffset, PLOT_PADDING } from '@/lib/replayCanvas'
+import { legibleOn } from '@/lib/colors'
+import { CARD_SURFACE, indexAtOffset, PLOT_PADDING } from '@/lib/replayCanvas'
 import { clockLabel, periodLabel } from '@/lib/winprob'
 import { SPEEDS, useReplay } from '@/lib/useReplay'
 import type { Game, GamePlay } from '@/types/nfl'
-
-/** The card the canvas sits on, for the contrast check on the team's accent. */
-const SURFACE = '#0a0a0a'
 
 const BUTTON =
   'rounded-md border border-neutral-700 px-3 py-1.5 text-sm font-medium text-neutral-200 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400'
@@ -47,7 +44,7 @@ const KEY_JUMP: Record<string, number> = {
 }
 
 export default function WinProbCanvas({ game }: { game: Game }) {
-  const color = accentOn(SURFACE, game.home.color, '#a3a3a3')
+  const color = legibleOn(CARD_SURFACE, game.home.color)
   const replay = useReplay(game, color)
   const { canvasRef, sliderRef, playing, playIndex, lastIndex, speed, keyIndices, hoverIndex } =
     replay

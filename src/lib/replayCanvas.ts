@@ -31,12 +31,21 @@ const PAD = PLOT_PADDING
  */
 const MAX_DPR = 2
 
+/**
+ * The card the canvas sits on: `bg-neutral-900/40` composited over
+ * `bg-neutral-950`, which is (0.4 x 23) + (0.6 x 10) per channel. Contrast for
+ * anything drawn on the canvas has to be measured against this rather than
+ * against the page behind it, or every colour comes out a little brighter on
+ * paper than it looks on screen.
+ */
+export const CARD_SURFACE = '#0f0f0f'
+
 const COLOR = {
   grid: '#262626', // neutral-800
   even: '#525252', // neutral-600 — the 50% line
   label: '#737373', // neutral-500
   cursorLine: '#404040', // neutral-700
-  surface: '#0a0a0a', // the page behind the card: the cursor dot's ring, and the key-play beads
+  surface: CARD_SURFACE, // punched around the cursor dot and the key-play beads
   hover: '#e5e5e5', // neutral-200 — the pointer's own hairline
 }
 
@@ -339,7 +348,7 @@ export interface FrameOptions {
   keyIndices: readonly number[]
   /** The play under the pointer, or null. */
   hover: number | null
-  /** The home team's accent, already checked for contrast by `accentOn`. */
+  /** The home team's color, already lifted to 3:1 by `legibleOn`. */
   color: string
   size: Size
 }

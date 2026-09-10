@@ -64,6 +64,40 @@ export function accentOn(dark: string, primary: string, secondary: string): stri
   return '#a3a3a3' // neutral-400
 }
 
+/** WCAG 1.4.11: a graphic that carries meaning needs this much against its background. */
+export const GRAPHIC_CONTRAST = 3
+
+function toHex(rgb: [number, number, number]): string {
+  return `#${rgb.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')}`
+}
+
+/**
+ * A team color lifted until it is legible against a dark surface.
+ *
+ * The replay curve is the content, not decoration, so it owes the 3:1 that
+ * WCAG asks of a meaningful graphic — and nine of the 32 primary colors miss
+ * it against the card, the Jets' green managing 1.65:1. Rather than drop those
+ * teams to a neutral, which would make a third of the league draw an identical
+ * grey line, the hue is mixed toward white until it clears the bar. Every team
+ * gets there while still looking like itself.
+ *
+ * Black is the exception it cannot help: Las Vegas and Pittsburgh have no hue
+ * to keep, so they arrive at grey either way.
+ */
+export function legibleOn(surface: string, color: string, minimum = GRAPHIC_CONTRAST): string {
+  const rgb = parseHex(color)
+  if (!rgb) return '#a3a3a3' // neutral-400
+  for (let mix = 0; mix <= 1; mix += 0.02) {
+    const lifted = toHex([
+      rgb[0] + (255 - rgb[0]) * mix,
+      rgb[1] + (255 - rgb[1]) * mix,
+      rgb[2] + (255 - rgb[2]) * mix,
+    ])
+    if (contrastRatio(lifted, surface) >= minimum) return lifted
+  }
+  return '#ffffff'
+}
+
 /**
  * A hex color as an `rgba()` string.
  *

@@ -234,6 +234,22 @@ offset comes from the event, so hovering never measures the DOM, and the hovered
 only when it changes to a different play. Measured while playing at 2x with the pointer sweeping the
 plot at 60 moves a second: **59.9fps unthrottled, 59.5fps with the CPU throttled 6x**.
 
+### Team colour on the replay
+
+The curve is the content, not decoration, so it owes the 3:1 that WCAG 1.4.11 asks of a meaningful
+graphic. Nine of the 32 primary colours missed that against the card — the Jets' green managed
+1.65:1 — and a further thirteen were being replaced wholesale by a neutral, which made a third of
+the league draw an identical grey line.
+
+`legibleOn` keeps the hue and mixes it toward white until it clears the bar. All 32 teams now pass,
+between 3.01:1 and 10.36:1, and nine were already legible and are untouched. Contrast is measured
+against the card — `bg-neutral-900/40` over `bg-neutral-950`, so `#0f0f0f` — not against the page
+behind it; measuring against the page put three teams a hundredth or two under the bar while the
+arithmetic said they passed. Verified from rendered pixels, not from the arithmetic.
+
+The League dashboard and Team page still use the older decorative threshold; those are Stage 6's
+accessibility pass.
+
 ### Measured, not asserted
 
 Recharts was the Stage 5A baseline, used to validate the data before any animation was built on it.
