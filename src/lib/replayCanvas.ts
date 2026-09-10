@@ -41,10 +41,12 @@ const MAX_DPR = 2
 export const CARD_SURFACE = '#0f0f0f'
 
 const COLOR = {
+  // Gridlines stay faint on purpose: they are scaffolding, and the value they
+  // would otherwise carry is written on the axis labels beside them.
   grid: '#262626', // neutral-800
-  even: '#525252', // neutral-600 — the 50% line
-  label: '#737373', // neutral-500
-  cursorLine: '#404040', // neutral-700
+  even: '#6b6b6b', // the 50% line, at 3:1 — it means something, so it has to be visible
+  label: '#858585', // matches --color-muted: axis text owes the same 4.5:1 as any other text
+  cursorLine: '#6b6b6b', // 3:1, same reasoning as the even-odds line
   surface: CARD_SURFACE, // punched around the cursor dot and the key-play beads
   hover: '#e5e5e5', // neutral-200 — the pointer's own hairline
 }

@@ -30,19 +30,19 @@ export default function PlayerChip({
     <div className="flex items-baseline gap-2 py-1.5">
       {rank !== undefined && (
         <span
-          className={`w-4 shrink-0 text-xs tabular-nums ${rank === 1 ? 'font-bold text-emerald-400' : 'text-neutral-600'}`}
+          className={`w-4 shrink-0 text-xs tabular-nums ${rank === 1 ? 'font-bold text-emerald-400' : 'text-muted'}`}
           title={rank === 1 ? 'Starter' : `Depth ${rank}`}
         >
           {rank}
         </span>
       )}
-      <span className="w-7 shrink-0 text-xs text-neutral-500 tabular-nums">
+      <span className="w-7 shrink-0 text-xs text-muted tabular-nums">
         {player.number !== undefined ? `#${player.number}` : ''}
       </span>
       <span className="min-w-0 flex-1">
         <span className="text-sm text-neutral-100">{player.name}</span>
         {details.length > 0 && (
-          <span className="ml-2 text-xs break-words text-neutral-500">{details.join(' · ')}</span>
+          <span className="ml-2 text-xs break-words text-muted">{details.join(' · ')}</span>
         )}
       </span>
     </div>

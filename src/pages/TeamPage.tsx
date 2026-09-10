@@ -51,7 +51,7 @@ export default function TeamPage() {
   return (
     <LazyMotion features={domAnimation} strict>
       <div className="space-y-10">
-        <nav aria-label="Breadcrumb" className="text-sm text-neutral-500">
+        <nav aria-label="Breadcrumb" className="text-sm text-muted">
           <Link to="/" className="hover:text-neutral-300">
             League
           </Link>

@@ -2,6 +2,17 @@
 
 @theme {
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /*
+   * The quiet text colour.
+   *
+   * Tailwind's neutral-500 reaches only 4.04:1 on a card and neutral-600 just
+   * 2.46:1, both short of the 4.5:1 that normal-size text owes. This is the
+   * lightest grey that clears it on every surface here — the page, a card, and
+   * a bar track — with room to spare. The faintest tier now separates itself by
+   * size and weight rather than by fading further.
+   */
+  --color-muted: #858585;
 }
 
 html {

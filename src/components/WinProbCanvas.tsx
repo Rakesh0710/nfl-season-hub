@@ -115,7 +115,7 @@ export default function WinProbCanvas({ game }: { game: Game }) {
     <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 sm:p-4">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-neutral-100">{game.home.name} win probability</h2>
-        <p className="text-xs text-neutral-500 tabular-nums">
+        <p className="text-xs text-muted tabular-nums">
           Play {playIndex + 1} of {game.plays.length}
         </p>
       </div>
@@ -230,7 +230,7 @@ export default function WinProbCanvas({ game }: { game: Game }) {
 
       {play && <div className="mt-3">{<PlayContext play={play} game={game} color={color} />}</div>}
 
-      <p className="mt-2 text-[11px] text-neutral-500">
+      <p className="mt-2 text-[11px] text-muted">
         Win probability is the pre-snap value going into each play. 50% is even odds; above the
         dashed line favours {game.home.id}.
       </p>

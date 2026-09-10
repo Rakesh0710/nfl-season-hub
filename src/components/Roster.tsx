@@ -69,7 +69,7 @@ export default function Roster({ players }: { players: readonly Player[] }) {
             >
               <h3 className="mb-1 flex items-baseline justify-between gap-2 text-xs font-semibold text-neutral-300">
                 <span>{POSITION_GROUP_LABELS[position] ?? position}</span>
-                <span className="text-neutral-600 tabular-nums">{list.length}</span>
+                <span className="text-muted tabular-nums">{list.length}</span>
               </h3>
               <ul className="divide-y divide-neutral-800/60">
                 {list.map((player) => (

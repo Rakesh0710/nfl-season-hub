@@ -45,7 +45,7 @@ export default function StatBar({ label, value, domain, format, color, hint }: S
       <div className="flex items-baseline justify-between gap-3">
         <div className="min-w-0">
           <span className="text-sm text-neutral-300">{label}</span>
-          {hint && <span className="ml-2 text-[11px] text-neutral-500">{hint}</span>}
+          {hint && <span className="ml-2 text-[11px] text-muted">{hint}</span>}
         </div>
         {/* The count-up rewrites this text every frame, so mid-animation the
             DOM reads "3.4" when the real figure is 21.3. Assistive technology
@@ -75,7 +75,7 @@ export default function StatBar({ label, value, domain, format, color, hint }: S
         )}
       </div>
 
-      <div className="mt-1 flex justify-between text-[10px] text-neutral-600 tabular-nums">
+      <div className="mt-1 flex justify-between text-[10px] text-muted tabular-nums">
         <span>{format(min)}</span>
         <span>{format(max)}</span>
       </div>

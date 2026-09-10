@@ -29,7 +29,7 @@ export default function DepthChart({ chart }: { chart: Record<string, Player[]> 
     <div className="space-y-6">
       {units.map(({ unit, positions: list }) => (
         <section key={unit}>
-          <h3 className="mb-2 text-[11px] font-semibold tracking-widest text-neutral-500 uppercase">
+          <h3 className="mb-2 text-[11px] font-semibold tracking-widest text-muted uppercase">
             {unit}
           </h3>
           <div className="grid items-start gap-3 sm:grid-cols-2 lg:grid-cols-3">

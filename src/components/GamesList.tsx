@@ -56,12 +56,12 @@ export default function GamesList({
                 to={`/game/${game.gameId}`}
                 className="flex items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-neutral-900 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-400 sm:gap-4 sm:px-4"
               >
-                <span className="w-11 shrink-0 text-xs text-neutral-500 sm:w-24">
+                <span className="w-11 shrink-0 text-xs text-muted sm:w-24">
                   <span className="sm:hidden">{shortWeekLabel(game)}</span>
                   <span className="hidden sm:inline">{weekLabel(game)}</span>
                 </span>
 
-                <span className="hidden w-12 shrink-0 text-xs text-neutral-500 sm:block">
+                <span className="hidden w-12 shrink-0 text-xs text-muted sm:block">
                   {shortDate(game.date)}
                 </span>
 

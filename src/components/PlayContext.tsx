@@ -34,8 +34,8 @@ export default function PlayContext({
           {periodLabel(play.quarter)} {clockLabel(play.clockSeconds)}
         </span>
         <span className="text-base font-semibold text-neutral-100 tabular-nums">
-          {game.away.id} {play.scoreAway} <span className="text-neutral-600">–</span>{' '}
-          {play.scoreHome} {game.home.id}
+          {game.away.id} {play.scoreAway} <span className="text-muted">–</span> {play.scoreHome}{' '}
+          {game.home.id}
         </span>
         {play.isKeyPlay && (
           <span className="rounded border border-amber-400/30 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-amber-300 uppercase">
@@ -52,7 +52,7 @@ export default function PlayContext({
 
       <p className="mt-2 text-sm break-words text-neutral-100">{play.description}</p>
 
-      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-neutral-500 tabular-nums">
+      <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted tabular-nums">
         <span className="flex items-center gap-1.5">
           <span
             aria-hidden

@@ -36,7 +36,7 @@ export default function ProjectedWins({
       className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-[11px] font-semibold tracking-widest text-neutral-500 uppercase">
+        <h2 className="text-[11px] font-semibold tracking-widest text-muted uppercase">
           Projected wins
         </h2>
         <p className="text-sm text-neutral-400">
@@ -86,7 +86,7 @@ export default function ProjectedWins({
         </span>
       </div>
 
-      <div className="flex justify-between text-[10px] text-neutral-600 tabular-nums">
+      <div className="flex justify-between text-[10px] text-muted tabular-nums">
         <span>0</span>
         <span>{MAX_WINS} games</span>
       </div>

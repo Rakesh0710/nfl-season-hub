@@ -79,7 +79,7 @@ export default function LeaguePage() {
         <TeamGrid teams={visible} />
       )}
 
-      <p className="mt-10 max-w-prose text-xs text-neutral-500">
+      <p className="mt-10 max-w-prose text-xs text-muted">
         Projected wins are market-implied: each game&rsquo;s closing point spread is converted to a
         win probability and summed across the regular season. They are not a preseason Vegas
         over/under, which nflverse stopped publishing after 2020.
@@ -136,7 +136,7 @@ function GroupedTeams({ teams }: { teams: TeamSummary[] }) {
           <section key={division} aria-labelledby={`div-${slug}`}>
             <h2
               id={`div-${slug}`}
-              className="mb-3 text-xs font-semibold tracking-widest text-neutral-500 uppercase"
+              className="mb-3 text-xs font-semibold tracking-widest text-muted uppercase"
             >
               {division}
             </h2>

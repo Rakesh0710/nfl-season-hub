@@ -16,7 +16,7 @@ export default function DraftClass({ picks }: { picks: readonly DraftPick[] }) {
       <table className="w-full min-w-[34rem] text-left text-sm">
         <caption className="sr-only">Draft class, in selection order</caption>
         <thead>
-          <tr className="border-b border-neutral-800 text-[11px] tracking-widest text-neutral-500 uppercase">
+          <tr className="border-b border-neutral-800 text-[11px] tracking-widest text-muted uppercase">
             <th scope="col" className="px-3 py-2 font-medium">
               Rd
             </th>

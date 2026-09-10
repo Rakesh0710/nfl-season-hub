@@ -298,7 +298,17 @@ mid-count-up the DOM reads a number that was never true.
 matching one for the chunk it is still downloading — otherwise a navigation showed a spinner for the
 chunk and then a different skeleton for the data, two waiting states for one click.
 
-**Accessibility.** The audit found three real defects. The League outline skipped h1 to h3, because
+**Text contrast.** Every distinct text style on every page was measured against its composited
+background — Tailwind v4 serialises colours as `oklch()`, so each one is painted into a canvas and
+read back rather than parsed. `text-neutral-600` came in at **2.46:1** and `text-neutral-500` at
+**4.05:1**, both under the 4.5:1 normal-size text owes. Both now resolve to one `--color-muted`
+token at 5.19:1 on a card, and the faintest tier separates itself by size and weight instead of by
+fading further. The canvas carried the same greys: its axis labels were 4.04:1 and the even-odds
+line 2.45:1, and both were lifted. Gridlines stay faint deliberately — they are scaffolding, and
+the value they would carry is written on the labels beside them. All 88 text styles across four
+pages now pass.
+
+**Accessibility.** The audit found three further defects. The League outline skipped h1 to h3, because
 the card headings had no level between them and the page title; the view summary is now the h2 it
 should always have been. An error page rendered its heading as an h2, leaving the document with no
 h1 at all — it replaces the page it was rendered for, so it owns the page heading. And twelve of the

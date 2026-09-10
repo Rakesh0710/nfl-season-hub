@@ -49,7 +49,7 @@ function Panel({
     <section className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-semibold text-neutral-100">{title}</h3>
-        {lowerIsBetter && <span className="text-[11px] text-neutral-500">lower is better</span>}
+        {lowerIsBetter && <span className="text-[11px] text-muted">lower is better</span>}
       </div>
       {!line ? (
         <p className="mt-3 text-sm text-neutral-400">No stats available for this team.</p>
@@ -67,7 +67,7 @@ function Panel({
               />
             ))}
           </div>
-          <p className="mt-3 text-[11px] text-neutral-600">
+          <p className="mt-3 text-[11px] text-muted">
             From {line.plays.toLocaleString()} regular-season scrimmage plays.
           </p>
         </>

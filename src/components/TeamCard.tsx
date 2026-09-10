@@ -74,11 +74,11 @@ export default function TeamCard({ team }: { team: TeamSummary }) {
 
         <dl className="flex items-end justify-between gap-3 pl-2">
           <div>
-            <dt className="text-[11px] tracking-wide text-neutral-500 uppercase">Last season</dt>
+            <dt className="text-[11px] tracking-wide text-muted uppercase">Last season</dt>
             <dd className="text-lg font-semibold tabular-nums">{recordLabel(team.lastSeason)}</dd>
           </div>
           <div className="text-right">
-            <dt className="text-[11px] tracking-wide text-neutral-500 uppercase">Projected</dt>
+            <dt className="text-[11px] tracking-wide text-muted uppercase">Projected</dt>
             {/* One decimal is the honest precision for a market-derived
                 estimate, but it makes near-neighbours look tied, so the exact
                 figure stays available on hover. */}

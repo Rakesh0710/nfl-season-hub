@@ -63,9 +63,7 @@ export default function LeagueControls({
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <fieldset className="min-w-0">
-        <legend className="mb-1.5 text-[11px] tracking-widest text-neutral-500 uppercase">
-          Sort by
-        </legend>
+        <legend className="mb-1.5 text-[11px] tracking-widest text-muted uppercase">Sort by</legend>
         <div className="flex flex-wrap gap-1 rounded-lg border border-neutral-800 p-1">
           {SORTS.map((key) => {
             const active = view.sort === key
@@ -91,7 +89,7 @@ export default function LeagueControls({
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
         <fieldset>
-          <legend className="mb-1.5 text-[11px] tracking-widest text-neutral-500 uppercase">
+          <legend className="mb-1.5 text-[11px] tracking-widest text-muted uppercase">
             Conference
           </legend>
           <div className="flex gap-1 rounded-lg border border-neutral-800 p-1">
@@ -112,7 +110,7 @@ export default function LeagueControls({
         <div>
           <label
             htmlFor="division"
-            className="mb-1.5 block text-[11px] tracking-widest text-neutral-500 uppercase"
+            className="mb-1.5 block text-[11px] tracking-widest text-muted uppercase"
           >
             Division
           </label>

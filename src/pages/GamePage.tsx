@@ -29,7 +29,7 @@ export default function GamePage() {
 
   return (
     <div className="space-y-6">
-      <nav aria-label="Breadcrumb" className="text-sm text-neutral-500">
+      <nav aria-label="Breadcrumb" className="text-sm text-muted">
         <Link to="/" className="hover:text-neutral-300">
           League
         </Link>
@@ -50,10 +50,10 @@ export default function GamePage() {
             scoreboard, and only sm+ mirrors them across a centre column. */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-5">
           <Side team={game.away} won={awayWon} label="Away" />
-          <span className="hidden shrink-0 text-xs text-neutral-600 sm:block">Final</span>
+          <span className="hidden shrink-0 text-xs text-muted sm:block">Final</span>
           <Side team={game.home} won={homeWon} label="Home" mirrorOnDesktop />
         </div>
-        <p className="mt-3 text-xs text-neutral-500 sm:text-center">
+        <p className="mt-3 text-xs text-muted sm:text-center">
           Final · {shortDate(game.date)} {game.date.slice(0, 4)} · Season {game.season} ·{' '}
           {weekLabel(game)}
         </p>
@@ -61,7 +61,7 @@ export default function GamePage() {
 
       <WinProbCanvas game={game} />
 
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted">
         Win probability from nflverse play-by-play. Scrub the timeline or select a key play to jump
         to a moment.
       </p>
@@ -95,11 +95,11 @@ function Side({
           {team.id}
         </span>
         <p className="truncate text-sm font-semibold text-neutral-100 sm:text-base">{team.name}</p>
-        <p className="text-[11px] text-neutral-500">{label}</p>
+        <p className="text-[11px] text-muted">{label}</p>
       </div>
       <p
         className={`shrink-0 text-3xl font-bold tabular-nums sm:text-4xl ${
-          won ? 'text-neutral-100' : 'text-neutral-500'
+          won ? 'text-neutral-100' : 'text-muted'
         }`}
       >
         {team.finalScore}

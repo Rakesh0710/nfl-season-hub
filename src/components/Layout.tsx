@@ -49,7 +49,7 @@ export default function Layout() {
       </main>
 
       <footer className="border-t border-neutral-800">
-        <div className="mx-auto max-w-6xl px-4 py-6 text-xs text-neutral-500 sm:px-6">
+        <div className="mx-auto max-w-6xl px-4 py-6 text-xs text-muted sm:px-6">
           <p>
             Data from{' '}
             <a
