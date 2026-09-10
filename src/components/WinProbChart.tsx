@@ -26,7 +26,7 @@ export default function WinProbChart({ game }: { game: Game }) {
   const data = toChartPoints(game)
   const homeColor = accentOn(SURFACE, game.home.color, '#a3a3a3')
   const marks = quarterBoundaries(game)
-  const maxElapsed = data.length ? data[data.length - 1].elapsed : 3600
+  const lastIndex = Math.max(0, data.length - 1)
 
   return (
     <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-3 sm:p-4">
@@ -40,9 +40,9 @@ export default function WinProbChart({ game }: { game: Game }) {
           <LineChart data={data} margin={{ top: 8, right: 8, bottom: 4, left: -18 }}>
             <CartesianGrid stroke="#262626" vertical={false} />
             <XAxis
-              dataKey="elapsed"
+              dataKey="index"
               type="number"
-              domain={[0, maxElapsed]}
+              domain={[0, lastIndex]}
               ticks={marks.map((m) => m.at)}
               tickFormatter={(value: number) => marks.find((m) => m.at === value)?.label ?? ''}
               stroke="#525252"

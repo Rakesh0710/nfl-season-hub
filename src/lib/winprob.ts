@@ -26,15 +26,32 @@ export function toChartPoints(game: Game): ChartPoint[] {
   }))
 }
 
-/** Quarter boundaries in elapsed seconds, for the vertical dividers. */
+/**
+ * Where each quarter starts, as an index into the plays array.
+ *
+ * The x axis is play order, not elapsed time. Several plays legitimately share
+ * one timestamp — a kickoff and the snap that follows are both logged at 15:00
+ * — so an elapsed-seconds axis collides them and cannot guarantee one point
+ * per play. Play order gives every play its own position, and it is also the
+ * axis the replay itself advances along.
+ */
 export function quarterBoundaries(game: Game): { at: number; label: string }[] {
-  const maxQuarter = game.plays.reduce((m, p) => Math.max(m, p.quarter), 4)
-  const otLength = game.gameType === 'REG' ? 600 : 900
   const marks: { at: number; label: string }[] = []
-  for (let q = 1; q <= maxQuarter; q += 1) {
-    const at = q <= 4 ? (q - 1) * 900 : 3600 + (q - 5) * otLength
-    marks.push({ at, label: q <= 4 ? `Q${q}` : q === 5 ? 'OT' : `OT${q - 4}` })
-  }
+  let seen = 0
+  game.plays.forEach((play, index) => {
+    if (play.quarter > seen) {
+      seen = play.quarter
+      marks.push({
+        at: index,
+        label:
+          play.quarter <= 4
+            ? `Q${play.quarter}`
+            : play.quarter === 5
+              ? 'OT'
+              : `OT${play.quarter - 4}`,
+      })
+    }
+  })
   return marks
 }
 
