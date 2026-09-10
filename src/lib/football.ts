@@ -6,7 +6,10 @@
  * to render when the data simply does not have a value.
  */
 
-import type { GameSummary, Player, TeamRecord } from '@/types/nfl'
+import type { GameSummary, GameType, Player, TeamRecord } from '@/types/nfl'
+
+/** Only what a label needs, so both GameSummary and Game satisfy it. */
+type Scheduled = { week: number; gameType: GameType }
 
 /** Rendered wherever a value genuinely is not in the dataset. */
 export const NO_VALUE = '—'
@@ -171,7 +174,7 @@ export function recordFromGames(games: readonly TeamGame[]): TeamRecord {
 }
 
 /** Postseason rounds get a name; regular-season games get their week number. */
-export function weekLabel(game: GameSummary): string {
+export function weekLabel(game: Scheduled): string {
   switch (game.gameType) {
     case 'WC':
       return 'Wild Card'
@@ -207,7 +210,7 @@ export function teamNickname(name: string): string {
 }
 
 /** "Week 12" -> "Wk 12"; postseason rounds keep a short name. */
-export function shortWeekLabel(game: GameSummary): string {
+export function shortWeekLabel(game: Scheduled): string {
   switch (game.gameType) {
     case 'WC':
       return 'WC'
