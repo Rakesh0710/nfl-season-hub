@@ -53,7 +53,10 @@ export default function WinProbCanvas({ game }: { game: Game }) {
         <button type="button" onClick={toggle} className={BUTTON}>
           {playing ? 'Pause' : finished ? 'Replay' : 'Play'}
         </button>
-        <button type="button" onClick={restart} className={BUTTON} disabled={playIndex === 0}>
+        {/* Never disabled. Disabling it on reaching play 0 - which pressing it
+            does - moved focus to the body, so a keyboard user lost their place
+            the moment the button worked. Restarting from the start is harmless. */}
+        <button type="button" onClick={restart} className={BUTTON}>
           Restart
         </button>
       </div>
