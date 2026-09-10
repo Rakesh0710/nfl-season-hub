@@ -1,24 +1,37 @@
 /**
  * The game page.
  *
- * Stage 5A: the game's own JSON is fetched only when this route opens, and its
- * win-probability series is drawn as a static Recharts line. The purpose of
- * this stage is to prove the data — ordering, plausible values, correct
- * mapping — before any animation is built on top of it. The canvas replay,
- * scrubber and key-play markers arrive in 5B onward.
+ * The game's own JSON is fetched only when this route opens. Stage 5B replaces
+ * the static Recharts line with the canvas replay; the scrubber and key-play
+ * markers arrive in 5C and 5D.
  */
 
-import { Link, useParams } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { ErrorState, Loading } from '@/components/States'
-import WinProbChart from '@/components/WinProbChart'
+import WinProbCanvas from '@/components/WinProbCanvas'
 import { readableTextOn } from '@/lib/colors'
 import { shortDate, weekLabel } from '@/lib/football'
 import { getGame } from '@/lib/data'
 import { useAsync } from '@/lib/useAsync'
 import type { Game, GameTeam } from '@/types/nfl'
 
+/**
+ * The Stage 5A Recharts chart, kept as a development-only reference for
+ * checking the canvas against a renderer already known to be correct:
+ * `/game/<id>?baseline=1` under `npm run dev`.
+ *
+ * `import.meta.env.DEV` is a compile-time constant, so the production build
+ * eliminates this branch — and with it the whole recharts dependency, which was
+ * most of the game chunk.
+ */
+const RechartsBaseline = import.meta.env.DEV
+  ? lazy(() => import('@/components/WinProbChart'))
+  : null
+
 export default function GamePage() {
   const { id = '' } = useParams<{ id: string }>()
+  const [params] = useSearchParams()
   const state = useAsync<Game>(`game/${id}`, () => getGame(id))
 
   if (state.status === 'loading') return <Loading label="Loading the game" />
@@ -60,11 +73,17 @@ export default function GamePage() {
         </p>
       </header>
 
-      <WinProbChart game={game} />
+      <WinProbCanvas game={game} />
+
+      {RechartsBaseline && params.get('baseline') === '1' && (
+        <Suspense fallback={null}>
+          <RechartsBaseline game={game} />
+        </Suspense>
+      )}
 
       <p className="text-xs text-neutral-500">
-        Stage 5A — static chart for data validation. The animated canvas replay and scrubber arrive
-        in the next step.
+        Stage 5B — canvas replay. Scrubbing, key-play markers and the performance pass arrive in the
+        next steps.
       </p>
     </div>
   )

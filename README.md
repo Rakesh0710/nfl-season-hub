@@ -76,7 +76,7 @@ etl/            Python ETL (own virtualenv)
 - [x] **Stage 2** — App shell & routing
 - [x] **Stage 3** — League dashboard
 - [x] **Stage 4** — Team page
-- [ ] **Stage 5** — Game replay engine
+- [ ] **Stage 5** — Game replay engine (5A static chart ✓, 5B canvas playback ✓)
 - [ ] **Stage 6** — Polish & cross-cutting
 - [ ] **Stage 7** — Engineering credibility layer
 
@@ -141,6 +141,38 @@ Stat bars print their scale endpoints, because a team file carries only its own 
 is no league distribution here to rank against. EPA per play spans zero, so it is drawn outwards
 from a zero line rather than as a short bar.
 
+### Game replay
+
+The replay is drawn on a `<canvas>` by a `requestAnimationFrame` loop, and the division of labour
+is the whole design:
+
+- `lib/replayCanvas.ts` is pure drawing — a context, a size and a play cursor in, pixels out. It
+  never reads the clock or React state, so a frame is fully determined by its cursor position. The
+  scrubber in 5C needs exactly that property.
+- `lib/useReplay.ts` owns the loop. The cursor, the previous frame's timestamp and the pending
+  frame handle live in refs; none of them causes a render. The two things a person can see —
+  whether it is running, and which play it is on — are published through `useSyncExternalStore`,
+  which fires only when the value changes.
+- `components/WinProbCanvas.tsx` is an ordinary React shell that never touches the canvas.
+
+Measured in Chrome: **60 canvas frames per second against 8 React renders per second** — 0.13
+renders per frame, one per play rather than one per frame.
+
+The x axis is play order, not elapsed time. Several plays legitimately share one timestamp (a
+kickoff and the snap after it are both logged at 15:00), so a 174-play game has only 146 distinct
+elapsed seconds and a time axis silently collides points.
+
+A frame may advance the cursor by at most 100ms of game time. `requestAnimationFrame` stops firing
+in a hidden tab, so the first frame back can carry minutes of wall time and would otherwise skip
+the replay to the final whistle; capping the step means a backgrounded tab holds its place. Device
+pixel ratio is honoured but capped at 2 — backing-store pixels grow with its square, and a third
+multiple buys nothing visible on a two-pixel line.
+
+Recharts was the Stage 5A baseline and is no longer shipped. It survives as a development-only
+reference at `/game/<id>?baseline=1` under `npm run dev`, behind an `import.meta.env.DEV` branch
+that the production build eliminates along with the dependency: the game chunk went from
+**105 kB gzipped to 3.8 kB**.
+
 ## Decisions log
 
 - **TypeScript `strict` from day one** rather than as a later pass — retrofitting strictness across
@@ -153,6 +185,9 @@ from a zero line rather than as a short bar.
 - **`projectedWins` is market-implied, not a Vegas over/under** — the nflverse win-totals dataset
   was discontinued after 2020. Each game's closing spread is converted to a win probability and
   summed across the regular season, which covers all six seasons instead of one.
+- **The canvas replay draws imperatively; React never re-renders per frame** — the animation loop
+  is an external system on the browser's frame clock, so its visible state reaches React through
+  `useSyncExternalStore` rather than being mirrored into `useState`.
 - **Data is validated, not assumed** — `etl/validate.py` checks all 1,693 games against the
   TypeScript contract and caught four real defects (non-chronological `play_id`, timeout rows with
   stale scores, playoff games inflating per-game rates, and a 2025 depth-chart schema change).

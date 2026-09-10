@@ -26,6 +26,12 @@ export function toChartPoints(game: Game): ChartPoint[] {
   }))
 }
 
+/** "Q3", "OT", "OT2" — how a period is named on the axis and in the readout. */
+export function periodLabel(quarter: number): string {
+  if (quarter <= 4) return `Q${quarter}`
+  return quarter === 5 ? 'OT' : `OT${quarter - 4}`
+}
+
 /**
  * Where each quarter starts, as an index into the plays array.
  *
@@ -41,15 +47,7 @@ export function quarterBoundaries(game: Game): { at: number; label: string }[] {
   game.plays.forEach((play, index) => {
     if (play.quarter > seen) {
       seen = play.quarter
-      marks.push({
-        at: index,
-        label:
-          play.quarter <= 4
-            ? `Q${play.quarter}`
-            : play.quarter === 5
-              ? 'OT'
-              : `OT${play.quarter - 4}`,
-      })
+      marks.push({ at: index, label: periodLabel(play.quarter) })
     }
   })
   return marks

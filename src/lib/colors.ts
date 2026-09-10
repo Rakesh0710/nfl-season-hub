@@ -63,3 +63,15 @@ export function accentOn(dark: string, primary: string, secondary: string): stri
   if (contrastRatio(secondary, dark) >= MIN_ACCENT) return secondary
   return '#a3a3a3' // neutral-400
 }
+
+/**
+ * A hex color as an `rgba()` string.
+ *
+ * Canvas gradients need per-stop alpha, and `globalAlpha` cannot vary along a
+ * gradient, so the transparency has to travel inside the color itself.
+ */
+export function withAlpha(hex: string, alpha: number): string {
+  const rgb = parseHex(hex)
+  if (!rgb) return `rgba(163, 163, 163, ${alpha})` // neutral-400
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`
+}
