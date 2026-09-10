@@ -69,3 +69,32 @@ body {
 .scrubber:focus-visible::-moz-range-thumb {
   @apply ring-2 ring-emerald-400 ring-offset-2 ring-offset-neutral-950;
 }
+
+/*
+ * The between-routes fade.
+ *
+ * CSS rather than Framer Motion: the shell is in the entry chunk, so importing
+ * a motion runtime here put it in front of every first visit, including game
+ * pages that never used it — 26 kB gzipped for one fade. Remounting on a key
+ * change replays the animation, and `both` holds the final frame.
+ *
+ * The rule only exists when motion is welcome. With reduced motion there is no
+ * animation to skip, so the page simply renders — content is never waiting on
+ * an animation that might not run.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .page-enter {
+    animation: page-enter 0.18s ease-out both;
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

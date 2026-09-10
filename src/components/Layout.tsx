@@ -5,8 +5,8 @@
  */
 
 import { Suspense } from 'react'
-import { Link, NavLink, Outlet } from 'react-router-dom'
-import { Loading } from '@/components/States'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { GameSkeleton, LeagueSkeleton, TeamSkeleton } from '@/components/Skeletons'
 
 function navClass({ isActive }: { isActive: boolean }) {
   return [
@@ -41,8 +41,10 @@ export default function Layout() {
       <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
         {/* Inside the shell, so header, nav and the nflverse attribution stay
             mounted while a lazily-loaded page chunk downloads. */}
-        <Suspense fallback={<Loading />}>
-          <Outlet />
+        <Suspense fallback={<RouteSkeleton />}>
+          <PageTransition>
+            <Outlet />
+          </PageTransition>
         </Suspense>
       </main>
 
@@ -73,4 +75,35 @@ export default function Layout() {
       </footer>
     </div>
   )
+}
+
+/**
+ * A short fade between routes.
+ *
+ * Keyed on the path so React replaces the subtree, which restarts the CSS
+ * animation. Only opacity and a few pixels of travel move, so the incoming page
+ * is interactive from its first frame rather than after the animation ends.
+ */
+function PageTransition({ children }: { children: React.ReactNode }) {
+  const { pathname } = useLocation()
+  return (
+    <div key={pathname} className="page-enter">
+      {children}
+    </div>
+  )
+}
+
+/**
+ * The skeleton for whichever route is still downloading its chunk.
+ *
+ * Without this the shell showed a spinner while the chunk arrived and the page
+ * then showed its own skeleton while the data arrived — two different waiting
+ * states in a row for one navigation. The path is enough to know which shape
+ * is coming.
+ */
+function RouteSkeleton() {
+  const { pathname } = useLocation()
+  if (pathname.startsWith('/game/')) return <GameSkeleton />
+  if (pathname.startsWith('/team/')) return <TeamSkeleton />
+  return <LeagueSkeleton />
 }

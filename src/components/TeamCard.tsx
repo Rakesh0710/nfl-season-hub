@@ -7,14 +7,12 @@
 
 import { m } from 'framer-motion'
 import { Link } from 'react-router-dom'
-import { accentOn, readableTextOn } from '@/lib/colors'
+import { BAR_TRACK, teamAccent, readableTextOn } from '@/lib/colors'
 import { recordLabel } from '@/lib/league'
 import type { TeamSummary } from '@/types/nfl'
 
 /** The dashboard's win scale. Nobody projects past this, so the bar stays comparable. */
 const MAX_WINS = 17
-
-const SURFACE = '#0a0a0a' // neutral-950, the page background
 
 const cardVariants = {
   hidden: { opacity: 0, y: 8 },
@@ -29,7 +27,7 @@ const cardVariants = {
 }
 
 export default function TeamCard({ team }: { team: TeamSummary }) {
-  const accent = accentOn(SURFACE, team.primaryColor, team.secondaryColor)
+  const accent = teamAccent(BAR_TRACK, team.primaryColor, team.secondaryColor)
   const badgeText = readableTextOn(team.primaryColor)
   const projected = team.projectedWins
   const share = Math.max(0, Math.min(1, projected / MAX_WINS))

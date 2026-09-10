@@ -50,19 +50,8 @@ export function readableTextOn(background: string): '#000000' | '#ffffff' {
     : '#000000'
 }
 
-/**
- * A team color safe to use as an accent on a dark surface.
- *
- * Near-black colors (Pittsburgh, Las Vegas, Chicago) vanish against the app's
- * neutral-950 background, so they fall back to the secondary color when that
- * reads better, and to a neutral otherwise.
- */
-export function accentOn(dark: string, primary: string, secondary: string): string {
-  const MIN_ACCENT = 1.6
-  if (contrastRatio(primary, dark) >= MIN_ACCENT) return primary
-  if (contrastRatio(secondary, dark) >= MIN_ACCENT) return secondary
-  return '#a3a3a3' // neutral-400
-}
+/** The neutral track a bar fill is read against: Tailwind's neutral-800. */
+export const BAR_TRACK = '#262626'
 
 /** WCAG 1.4.11: a graphic that carries meaning needs this much against its background. */
 export const GRAPHIC_CONTRAST = 3
@@ -96,6 +85,24 @@ export function legibleOn(surface: string, color: string, minimum = GRAPHIC_CONT
     if (contrastRatio(lifted, surface) >= minimum) return lifted
   }
   return '#ffffff'
+}
+
+/**
+ * A team color to draw data with — a bar fill, an accent stripe — on a dark UI.
+ *
+ * The value a bar encodes is read from where its fill stops against the track
+ * behind it, so that is the pair owing WCAG's 3:1 for a meaningful graphic.
+ * Twelve of the 32 primaries missed it against `BAR_TRACK`, Buffalo's royal
+ * blue managing 1.34:1.
+ *
+ * The secondary color is tried before lightening, because a team's own second
+ * color keeps more of its identity than a washed-out first one — Pittsburgh
+ * gets its gold rather than a pale black.
+ */
+export function teamAccent(track: string, primary: string, secondary: string): string {
+  if (contrastRatio(primary, track) >= GRAPHIC_CONTRAST) return primary
+  if (contrastRatio(secondary, track) >= GRAPHIC_CONTRAST) return secondary
+  return legibleOn(track, primary)
 }
 
 /**

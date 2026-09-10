@@ -77,7 +77,7 @@ etl/            Python ETL (own virtualenv)
 - [x] **Stage 3** — League dashboard
 - [x] **Stage 4** — Team page
 - [x] **Stage 5** — Game replay engine
-- [ ] **Stage 6** — Polish & cross-cutting
+- [x] **Stage 6** — Polish & cross-cutting
 - [ ] **Stage 7** — Engineering credibility layer
 
 ## Routing and data access
@@ -279,6 +279,37 @@ would cost more than the redraw, so it was not written.
 Resizing repaints exactly once per size change, and not at all when a viewport change does not
 alter the canvas. Scrubbing at 60 pointer moves a second holds 60fps with a p95 frame of 16.9ms.
 Leaving the page mid-playback leaves zero animation callbacks outstanding.
+
+### Polish pass
+
+**Motion.** Routes cross-fade over 0.18s and Team sections fade up the first time they are scrolled
+to. The route fade is plain CSS: the shell lives in the entry chunk, so importing a motion runtime
+there put **26 kB gzipped in front of every first visit** — including game pages, which never used
+it — for one fade. Framer Motion stays where it earns its place, in the lazily loaded chunk the
+League and Team pages share. Both animations only ever add opacity: content is hittable within
+50ms of a navigation, well before the 180ms fade ends, and every section reaches full opacity
+whether or not the observer fires. `prefers-reduced-motion`
+removes all of it — sections render solid from their first frame, and the skeleton pulse resolves to
+`animation-name: none`. The projected-wins figure counts up like the stat bars already did, with the
+animated digits hidden from assistive technology and the settled value in an `sr-only` span, because
+mid-count-up the DOM reads a number that was never true.
+
+**States.** Each route now has a skeleton shaped like the page it precedes, and the shell picks the
+matching one for the chunk it is still downloading — otherwise a navigation showed a spinner for the
+chunk and then a different skeleton for the data, two waiting states for one click.
+
+**Accessibility.** The audit found three real defects. The League outline skipped h1 to h3, because
+the card headings had no level between them and the page title; the view summary is now the h2 it
+should always have been. An error page rendered its heading as an h2, leaving the document with no
+h1 at all — it replaces the page it was rendered for, so it owns the page heading. And twelve of the
+32 team colours drew bar fills below 3:1 against the neutral-800 track behind them, Buffalo's royal
+blue at **1.34:1**; `teamAccent` now tries the secondary colour before lightening the primary, so
+Pittsburgh keeps its gold rather than fading to grey.
+
+**Mobile.** At 320px the games list had squeezed opponents down to a single letter — "C…", "E…" —
+because the fixed columns left 18px for the name. Folding the home/away marker into the name line
+below `sm` returns 32px, and every opponent now renders in full with no clipping at 320, 360 and
+390px. No page scrolls horizontally at any of the four widths tested.
 
 ## Decisions log
 

@@ -9,6 +9,7 @@
 
 import { m, useReducedMotion } from 'framer-motion'
 import { num } from '@/lib/football'
+import { useCountUp } from '@/lib/useCountUp'
 import type { TeamRecord } from '@/types/nfl'
 
 const MAX_WINS = 17
@@ -24,6 +25,7 @@ export default function ProjectedWins({
 }) {
   const reduceMotion = useReducedMotion()
   const known = Number.isFinite(projected)
+  const animated = useCountUp(known ? projected : 0)
   const pct = (v: number) => (Math.max(0, Math.min(MAX_WINS, v)) / MAX_WINS) * 100
   const actual = lastSeason.wins
   const delta = known ? projected - actual : null
@@ -38,8 +40,12 @@ export default function ProjectedWins({
           Projected wins
         </h2>
         <p className="text-sm text-neutral-400">
+          {/* The same split StatBar uses: the animated digits are hidden from
+              assistive technology, which is handed the settled figure, because
+              mid-count-up the DOM reads a number that was never true. */}
           <span className="text-2xl font-bold text-neutral-100 tabular-nums">
-            {num(projected, 1)}
+            <span aria-hidden="true">{known ? num(animated, 1) : num(projected, 1)}</span>
+            <span className="sr-only">{num(projected, 1)}</span>
           </span>
           <span className="ml-2">
             vs {actual} actual

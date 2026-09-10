@@ -7,7 +7,8 @@
  */
 
 import { Link, useParams } from 'react-router-dom'
-import { ErrorState, Loading } from '@/components/States'
+import { ErrorState } from '@/components/States'
+import { GameSkeleton } from '@/components/Skeletons'
 import WinProbCanvas from '@/components/WinProbCanvas'
 import { readableTextOn } from '@/lib/colors'
 import { shortDate, weekLabel } from '@/lib/football'
@@ -19,7 +20,7 @@ export default function GamePage() {
   const { id = '' } = useParams<{ id: string }>()
   const state = useAsync<Game>(`game/${id}`, () => getGame(id))
 
-  if (state.status === 'loading') return <Loading label="Loading the game" />
+  if (state.status === 'loading') return <GameSkeleton />
   if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
   const game = state.data

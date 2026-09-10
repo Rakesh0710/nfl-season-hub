@@ -6,21 +6,20 @@
  * is the point of the whole application.
  */
 
-import { domAnimation, LazyMotion } from 'framer-motion'
+import { domAnimation, LazyMotion, m, useReducedMotion } from 'framer-motion'
 import { Link, useParams } from 'react-router-dom'
 import DepthChart from '@/components/DepthChart'
 import DraftClass from '@/components/DraftClass'
 import GamesList from '@/components/GamesList'
 import Roster from '@/components/Roster'
-import { ErrorState, Loading } from '@/components/States'
+import { ErrorState } from '@/components/States'
+import { TeamSkeleton } from '@/components/Skeletons'
 import TeamHeader from '@/components/TeamHeader'
 import TeamStats from '@/components/TeamStats'
-import { accentOn } from '@/lib/colors'
+import { BAR_TRACK, teamAccent } from '@/lib/colors'
 import { getTeam, getTeamsIndex } from '@/lib/data'
 import { useAsync } from '@/lib/useAsync'
 import type { Team, TeamSummary } from '@/types/nfl'
-
-const SURFACE = '#0a0a0a'
 
 const SECTIONS = [
   { id: 'games', label: 'Games' },
@@ -43,11 +42,11 @@ export default function TeamPage() {
     return { team, teamsById: new Map(index.map((t) => [t.id, t])) }
   })
 
-  if (state.status === 'loading') return <Loading label={`Loading ${teamId}`} />
+  if (state.status === 'loading') return <TeamSkeleton />
   if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
   const { team, teamsById } = state.data
-  const accent = accentOn(SURFACE, team.primaryColor, team.secondaryColor)
+  const accent = teamAccent(BAR_TRACK, team.primaryColor, team.secondaryColor)
 
   return (
     <LazyMotion features={domAnimation} strict>
@@ -101,6 +100,14 @@ export default function TeamPage() {
   )
 }
 
+/**
+ * A section that fades up the first time it is scrolled to.
+ *
+ * The reveal can only ever add opacity, never withhold it: the element is
+ * rendered in place with its final layout, and a visitor who prefers reduced
+ * motion — or whose browser never fires the observer — sees it immediately.
+ * `once` means scrolling back up does not replay anything.
+ */
 function Section({
   id,
   title,
@@ -110,12 +117,21 @@ function Section({
   title: string
   children: React.ReactNode
 }) {
+  const reduceMotion = useReducedMotion()
   return (
-    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-6">
+    <m.section
+      id={id}
+      aria-labelledby={`${id}-heading`}
+      className="scroll-mt-6"
+      initial={reduceMotion ? false : { opacity: 0, y: 12 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.08, margin: '0px 0px -10% 0px' }}
+      transition={{ duration: 0.28, ease: 'easeOut' }}
+    >
       <h2 id={`${id}-heading`} className="mb-3 text-lg font-bold tracking-tight">
         {title}
       </h2>
       {children}
-    </section>
+    </m.section>
   )
 }

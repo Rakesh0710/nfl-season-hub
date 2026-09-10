@@ -9,7 +9,8 @@ import { domAnimation, LazyMotion, m, useReducedMotion } from 'framer-motion'
 import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import LeagueControls from '@/components/LeagueControls'
-import { ErrorState, Loading } from '@/components/States'
+import { ErrorState } from '@/components/States'
+import { LeagueSkeleton } from '@/components/Skeletons'
 import TeamCard from '@/components/TeamCard'
 import { getTeamsIndex } from '@/lib/data'
 import {
@@ -47,7 +48,7 @@ export default function LeaguePage() {
     [teams, view],
   )
 
-  if (state.status === 'loading') return <Loading label="Loading the league" />
+  if (state.status === 'loading') return <LeagueSkeleton />
   if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
   const total = state.data.length
@@ -63,9 +64,12 @@ export default function LeaguePage() {
 
       <LeagueControls teams={state.data} view={view} onChange={setView} />
 
-      <p aria-live="polite" className="mt-4 text-sm text-neutral-400">
+      {/* A heading, not a paragraph: the cards below are h3, and without a
+          level between them and the page title the outline skipped h1 to h3.
+          It keeps announcing itself when the filters change. */}
+      <h2 aria-live="polite" className="mt-4 text-sm font-normal text-neutral-400">
         {describeView(view, visible.length, total)}
-      </p>
+      </h2>
 
       {visible.length === 0 ? (
         <EmptyState onReset={() => setView(DEFAULT_VIEW)} />

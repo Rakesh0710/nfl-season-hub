@@ -105,7 +105,7 @@ export default function KeyPlayRail({
             onClick={() => onSelect(index)}
             title={`${periodLabel(play.quarter)} ${clockLabel(play.clockSeconds)} — ${play.description}`}
             aria-label={`Key play ${position + 1} of ${keyIndices.length}, ${periodLabel(play.quarter)} ${clockLabel(play.clockSeconds)}: ${play.description}`}
-            className="group absolute top-0 flex size-6 -translate-x-1/2 items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-emerald-400"
+            className="group absolute top-0 flex size-6 -translate-x-1/2 items-center justify-center rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
             style={{ left: `${(index / lastIndex) * 100}%` }}
           >
             <span

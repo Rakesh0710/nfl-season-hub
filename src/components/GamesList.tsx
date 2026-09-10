@@ -54,9 +54,9 @@ export default function GamesList({
             <li key={game.gameId}>
               <Link
                 to={`/game/${game.gameId}`}
-                className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-neutral-900 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-400 sm:gap-4 sm:px-4"
+                className="flex items-center gap-2.5 px-3 py-2.5 transition-colors hover:bg-neutral-900 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-400 sm:gap-4 sm:px-4"
               >
-                <span className="w-14 shrink-0 text-xs text-neutral-500 sm:w-24">
+                <span className="w-11 shrink-0 text-xs text-neutral-500 sm:w-24">
                   <span className="sm:hidden">{shortWeekLabel(game)}</span>
                   <span className="hidden sm:inline">{weekLabel(game)}</span>
                 </span>
@@ -65,7 +65,9 @@ export default function GamesList({
                   {shortDate(game.date)}
                 </span>
 
-                <span className="w-6 shrink-0 text-center text-xs text-neutral-400">
+                {/* Its own column only where there is room for one. Below sm
+                    those 24px are the difference between "Chargers" and "C…". */}
+                <span className="hidden w-6 shrink-0 text-center text-xs text-neutral-400 sm:block">
                   {isHome ? 'vs' : '@'}
                 </span>
 
@@ -87,6 +89,7 @@ export default function GamesList({
                     York clubs render as the same string. */}
                 <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">
                   <span className="sm:hidden">
+                    <span className="text-neutral-400">{isHome ? 'vs' : '@'}</span>{' '}
                     {opponent ? teamNickname(opponent.name) : opponentId}
                   </span>
                   <span className="hidden sm:inline">{opponent?.name ?? opponentId}</span>

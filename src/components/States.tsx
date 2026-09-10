@@ -28,9 +28,11 @@ export function ErrorState({ error, retry }: { error: DataError; retry?: () => v
   const notFound = error.kind === 'not-found'
   return (
     <div role="alert" className="py-16">
-      <h2 className="text-lg font-semibold text-neutral-100">
+      {/* h1: this replaces the page it was rendered for, so it is the only
+          heading on screen and the document would otherwise have none. */}
+      <h1 className="text-lg font-semibold text-neutral-100">
         {notFound ? 'Not found' : 'Something went wrong'}
-      </h2>
+      </h1>
       <p className="mt-2 max-w-prose text-sm text-neutral-400">
         {notFound
           ? 'That team or game is not in this dataset. It may be from a season outside 2020-2025.'

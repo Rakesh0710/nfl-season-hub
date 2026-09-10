@@ -3,15 +3,13 @@
  * season's record, and the projected-win visualisation.
  */
 
-import { accentOn, readableTextOn } from '@/lib/colors'
+import { BAR_TRACK, teamAccent, readableTextOn } from '@/lib/colors'
 import { recordLabel } from '@/lib/league'
 import ProjectedWins from '@/components/ProjectedWins'
 import type { Team } from '@/types/nfl'
 
-const SURFACE = '#0a0a0a'
-
 export default function TeamHeader({ team }: { team: Team }) {
-  const accent = accentOn(SURFACE, team.primaryColor, team.secondaryColor)
+  const accent = teamAccent(BAR_TRACK, team.primaryColor, team.secondaryColor)
   const badgeText = readableTextOn(team.primaryColor)
 
   return (
