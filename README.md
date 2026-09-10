@@ -94,10 +94,19 @@ entries are evicted so failures can be retried.
 first proving the request succeeded. Loading is derived from a stale key rather than stored, which
 is also what prevents a slow request for one team from overwriting a fast one for the next.
 
-`vercel.json` deliberately excludes `/data` from the SPA history fallback. Without that, a missing
-JSON file would return `index.html` with a 200, and the fetch layer would report a parse error
-instead of "not found". `vite preview` behaves exactly that way, which is why the data layer also
-checks the response content type before parsing.
+### `vercel.json`
+
+The file cannot carry comments — Vercel validates it with `additionalProperties: false`, so even a
+`"comment"` key fails the build. The reasoning therefore lives here:
+
+- **`"source": "/((?!data/).*)"`** — the SPA history fallback deliberately excludes `/data`.
+  Without the exclusion a missing JSON file returns `index.html` with a 200, and the fetch layer
+  reports a parse error instead of "not found". `vite preview` behaves exactly that way, which is
+  why `src/lib/data.ts` _also_ rejects non-JSON content types; the two environments differ, so both
+  guards are needed.
+- **`stale-while-revalidate`, not `immutable`** — game files are not content-hashed and do change
+  whenever the ETL is re-run, so `immutable` would strand visitors on stale data. Game files get a
+  day of freshness and a week of stale-serving; the small index files get an hour.
 
 ## Decisions log
 
