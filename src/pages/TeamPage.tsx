@@ -1,95 +1,121 @@
 /**
- * Stage 2 placeholder for the team page.
+ * The team page.
  *
- * Proves the :id route param reaches the data layer and that an unknown team
- * fails gracefully. The real roster, depth chart and stats are Stage 4.
+ * Sections are laid out in one scroll rather than behind tabs, with an anchor
+ * nav for jumping. Games come first: they are the route into the replay, which
+ * is the point of the whole application.
  */
 
+import { domAnimation, LazyMotion } from 'framer-motion'
 import { Link, useParams } from 'react-router-dom'
+import DepthChart from '@/components/DepthChart'
+import DraftClass from '@/components/DraftClass'
+import GamesList from '@/components/GamesList'
+import Roster from '@/components/Roster'
 import { ErrorState, Loading } from '@/components/States'
-import { getTeam } from '@/lib/data'
+import TeamHeader from '@/components/TeamHeader'
+import TeamStats from '@/components/TeamStats'
+import { accentOn } from '@/lib/colors'
+import { getTeam, getTeamsIndex } from '@/lib/data'
 import { useAsync } from '@/lib/useAsync'
-import type { Team } from '@/types/nfl'
+import type { Team, TeamSummary } from '@/types/nfl'
+
+const SURFACE = '#0a0a0a'
+
+const SECTIONS = [
+  { id: 'games', label: 'Games' },
+  { id: 'stats', label: 'Team stats' },
+  { id: 'depth', label: 'Depth chart' },
+  { id: 'roster', label: 'Roster' },
+  { id: 'draft', label: 'Draft class' },
+]
+
+type TeamPageData = { team: Team; teamsById: Map<string, TeamSummary> }
 
 export default function TeamPage() {
   const { id = '' } = useParams<{ id: string }>()
-  const state = useAsync<Team>(`team/${id}`, () => getTeam(id.toUpperCase()))
+  const teamId = id.toUpperCase()
 
-  if (state.status === 'loading') return <Loading label={`Loading ${id.toUpperCase()}`} />
+  // The index is already cached if the visitor arrived from the dashboard; it
+  // supplies opponent names and logos for the games list.
+  const state = useAsync<TeamPageData>(`team/${teamId}`, async () => {
+    const [team, index] = await Promise.all([getTeam(teamId), getTeamsIndex()])
+    return { team, teamsById: new Map(index.map((t) => [t.id, t])) }
+  })
+
+  if (state.status === 'loading') return <Loading label={`Loading ${teamId}`} />
   if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
-  const team = state.data
-  const { wins, losses, ties } = team.lastSeason
+  const { team, teamsById } = state.data
+  const accent = accentOn(SURFACE, team.primaryColor, team.secondaryColor)
 
   return (
-    <div>
-      <nav aria-label="Breadcrumb" className="text-sm text-neutral-500">
-        <Link to="/" className="hover:text-neutral-300">
-          League
-        </Link>
-        <span aria-hidden> / </span>
-        <span className="text-neutral-300">{team.name}</span>
-      </nav>
+    <LazyMotion features={domAnimation} strict>
+      <div className="space-y-10">
+        <nav aria-label="Breadcrumb" className="text-sm text-neutral-500">
+          <Link to="/" className="hover:text-neutral-300">
+            League
+          </Link>
+          <span aria-hidden> / </span>
+          <span className="text-neutral-300">{team.name}</span>
+        </nav>
 
-      <div className="mt-3 flex items-center gap-4">
-        <span
-          aria-hidden
-          className="size-10 shrink-0 rounded-md"
-          style={{ backgroundColor: team.primaryColor }}
-        />
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{team.name}</h1>
-          <p className="text-sm text-neutral-400">
-            {team.division} · last season {wins}-{losses}
-            {ties ? `-${ties}` : ''} · {team.projectedWins} projected wins
-          </p>
-        </div>
+        <TeamHeader team={team} />
+
+        <nav
+          aria-label="Sections"
+          className="flex flex-wrap gap-1 border-y border-neutral-800 py-2"
+        >
+          {SECTIONS.map((section) => (
+            <a
+              key={section.id}
+              href={`#${section.id}`}
+              className="rounded-md px-3 py-1.5 text-sm text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+            >
+              {section.label}
+            </a>
+          ))}
+        </nav>
+
+        <Section id="games" title="Games">
+          <GamesList games={team.games} teamId={team.id} teamsById={teamsById} />
+        </Section>
+
+        <Section id="stats" title="Team stats">
+          <TeamStats stats={team.stats} color={accent} />
+        </Section>
+
+        <Section id="depth" title="Depth chart">
+          <DepthChart chart={team.depthChart} />
+        </Section>
+
+        <Section id="roster" title="Roster">
+          <Roster players={team.roster} />
+        </Section>
+
+        <Section id="draft" title="Draft class">
+          <DraftClass picks={team.draftClass} />
+        </Section>
       </div>
-
-      <p className="mt-4 text-sm text-neutral-400">
-        Stage 2 placeholder — the roster, depth chart, draft class and stats arrive in Stage 4.
-      </p>
-
-      <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Stat label="Roster" value={team.roster.length} />
-        <Stat label="Depth positions" value={Object.keys(team.depthChart).length} />
-        <Stat label="Draft picks" value={team.draftClass.length} />
-        <Stat label="Games" value={team.games.length} />
-      </dl>
-
-      <h2 className="mt-10 text-sm font-semibold tracking-widest text-neutral-500 uppercase">
-        Games — each links to a replay
-      </h2>
-      <ul className="mt-3 divide-y divide-neutral-800 border-y border-neutral-800">
-        {team.games.map((game) => {
-          const away = game.away === team.id
-          return (
-            <li key={game.gameId}>
-              <Link
-                to={`/game/${game.gameId}`}
-                className="flex items-center justify-between gap-4 py-2.5 text-sm hover:text-emerald-400"
-              >
-                <span className="text-neutral-400 tabular-nums">Wk {game.week}</span>
-                <span className="flex-1 truncate">
-                  {away ? '@' : 'vs'} {away ? game.home : game.away}
-                </span>
-                <span className="tabular-nums text-neutral-400">
-                  {game.awayScore}–{game.homeScore}
-                </span>
-              </Link>
-            </li>
-          )
-        })}
-      </ul>
-    </div>
+    </LazyMotion>
   )
 }
 
-function Stat({ label, value }: { label: string; value: string | number }) {
+function Section({
+  id,
+  title,
+  children,
+}: {
+  id: string
+  title: string
+  children: React.ReactNode
+}) {
   return (
-    <div className="rounded-lg border border-neutral-800 px-4 py-3">
-      <dt className="text-xs text-neutral-500">{label}</dt>
-      <dd className="mt-1 text-xl font-semibold tabular-nums">{value}</dd>
-    </div>
+    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-6">
+      <h2 id={`${id}-heading`} className="mb-3 text-lg font-bold tracking-tight">
+        {title}
+      </h2>
+      {children}
+    </section>
   )
 }

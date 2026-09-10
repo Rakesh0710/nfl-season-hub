@@ -75,7 +75,7 @@ etl/            Python ETL (own virtualenv)
 - [x] **Stage 1** — Data layer (ETL)
 - [x] **Stage 2** — App shell & routing
 - [x] **Stage 3** — League dashboard
-- [ ] **Stage 4** — Team page
+- [x] **Stage 4** — Team page
 - [ ] **Stage 5** — Game replay engine
 - [ ] **Stage 6** — Polish & cross-cutting
 - [ ] **Stage 7** — Engineering credibility layer
@@ -123,6 +123,23 @@ which would otherwise be invisible on a near-black page.
 Framer Motion is loaded through `LazyMotion` with only the `domAnimation` feature set, which cut
 the dashboard chunk from 42.2 KB to 29.0 KB gzipped. `strict` mode makes reaching for a heavier
 `motion.*` component a runtime error rather than a silent regression.
+
+### Team page
+
+Sections are laid out in one scroll with an anchor nav rather than behind tabs, and Games comes
+first — it is the route into the replay, which is the point of the application.
+
+Optional player fields are genuinely absent in the data: 163 players have no age and 182 no
+college. `PlayerChip` builds its detail line by filtering, so a missing value leaves no separator
+and no placeholder behind, and the line degrades to just a name.
+
+nflverse returns the whole season's roster, not the 53-man active list — a team carries 95-110
+names including released, reserve and practice-squad players. The roster therefore defaults to
+active, with the full list one click away.
+
+Stat bars print their scale endpoints, because a team file carries only its own numbers and there
+is no league distribution here to rank against. EPA per play spans zero, so it is drawn outwards
+from a zero line rather than as a short bar.
 
 ## Decisions log
 

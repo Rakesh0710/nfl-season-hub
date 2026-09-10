@@ -1,0 +1,223 @@
+/**
+ * Football-domain presentation helpers.
+ *
+ * Ordering, labelling and the handling of absent fields live here so every
+ * section of the team page agrees, and so no component ever has to decide what
+ * to render when the data simply does not have a value.
+ */
+
+import type { GameSummary, Player, TeamRecord } from '@/types/nfl'
+
+/** Rendered wherever a value genuinely is not in the dataset. */
+export const NO_VALUE = '—'
+
+/** Formats an optional value, never emitting "undefined", "null" or "NaN". */
+export function orDash(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return NO_VALUE
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : NO_VALUE
+  const trimmed = value.trim()
+  return trimmed === '' ? NO_VALUE : trimmed
+}
+
+/** Rounds for display, or a dash when the number is missing or not finite. */
+export function num(value: number | null | undefined, digits = 1): string {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : NO_VALUE
+}
+
+export function percent(value: number | null | undefined, digits = 1): string {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? `${(value * 100).toFixed(digits)}%`
+    : NO_VALUE
+}
+
+/** Roster position groups, in the order a depth chart is normally read. */
+export const ROSTER_POSITION_ORDER = [
+  'QB',
+  'RB',
+  'WR',
+  'TE',
+  'OL',
+  'DL',
+  'LB',
+  'DB',
+  'K',
+  'P',
+  'LS',
+] as const
+
+export const POSITION_GROUP_LABELS: Record<string, string> = {
+  QB: 'Quarterbacks',
+  RB: 'Running backs',
+  WR: 'Wide receivers',
+  TE: 'Tight ends',
+  OL: 'Offensive line',
+  DL: 'Defensive line',
+  LB: 'Linebackers',
+  DB: 'Defensive backs',
+  K: 'Kickers',
+  P: 'Punters',
+  LS: 'Long snappers',
+}
+
+/** Depth-chart positions grouped into the three units, in on-field order. */
+export const DEPTH_UNITS: { unit: string; positions: string[] }[] = [
+  { unit: 'Offense', positions: ['QB', 'RB', 'FB', 'WR', 'TE', 'LT', 'LG', 'C', 'RG', 'RT'] },
+  {
+    unit: 'Defense',
+    positions: [
+      'LDE',
+      'LDT',
+      'NT',
+      'RDT',
+      'RDE',
+      'SLB',
+      'MLB',
+      'WLB',
+      'LILB',
+      'RILB',
+      'LCB',
+      'RCB',
+      'NB',
+      'SS',
+      'FS',
+    ],
+  },
+  { unit: 'Special teams', positions: ['PK', 'P', 'H', 'LS', 'KR', 'PR'] },
+]
+
+/**
+ * nflverse roster status codes. Codes without a confident expansion are shown
+ * verbatim rather than guessed at — a wrong label is worse than a terse one.
+ */
+const STATUS_LABELS: Record<string, string> = {
+  ACT: 'Active',
+  INA: 'Inactive',
+  DEV: 'Practice squad',
+  RES: 'Reserve',
+  CUT: 'Released',
+  RET: 'Retired',
+  TRD: 'Traded',
+}
+
+export function statusLabel(status: string | undefined): string {
+  if (!status) return NO_VALUE
+  return STATUS_LABELS[status] ?? status
+}
+
+/** Players on the active roster, the default view of a 100-name season list. */
+export function isActive(player: Player): boolean {
+  return player.status === 'ACT'
+}
+
+/**
+ * Groups a roster by position group, preserving football order and appending
+ * any position the dataset introduces that this file does not know about.
+ */
+export function groupByPosition(players: readonly Player[]): [string, Player[]][] {
+  const groups = new Map<string, Player[]>()
+  for (const player of players) {
+    const key = player.position || 'Unlisted'
+    const list = groups.get(key) ?? []
+    list.push(player)
+    groups.set(key, list)
+  }
+  const known = ROSTER_POSITION_ORDER.filter((p) => groups.has(p))
+  const unknown = [...groups.keys()].filter(
+    (p) => !(ROSTER_POSITION_ORDER as readonly string[]).includes(p),
+  )
+  return [...known, ...unknown.sort()].map((key) => [
+    key,
+    (groups.get(key) ?? []).sort(
+      (a, b) => (a.number ?? 999) - (b.number ?? 999) || a.name.localeCompare(b.name),
+    ),
+  ])
+}
+
+export type GameResult = 'W' | 'L' | 'T'
+
+/** The team's perspective on one of its games. */
+export interface TeamGame {
+  game: GameSummary
+  opponentId: string
+  isHome: boolean
+  teamScore: number
+  opponentScore: number
+  result: GameResult
+}
+
+export function toTeamGame(game: GameSummary, teamId: string): TeamGame {
+  const isHome = game.home === teamId
+  const teamScore = isHome ? game.homeScore : game.awayScore
+  const opponentScore = isHome ? game.awayScore : game.homeScore
+  return {
+    game,
+    opponentId: isHome ? game.away : game.home,
+    isHome,
+    teamScore,
+    opponentScore,
+    result: teamScore > opponentScore ? 'W' : teamScore < opponentScore ? 'L' : 'T',
+  }
+}
+
+export function recordFromGames(games: readonly TeamGame[]): TeamRecord {
+  return games.reduce<TeamRecord>(
+    (acc, g) => ({
+      wins: acc.wins + (g.result === 'W' ? 1 : 0),
+      losses: acc.losses + (g.result === 'L' ? 1 : 0),
+      ties: acc.ties + (g.result === 'T' ? 1 : 0),
+    }),
+    { wins: 0, losses: 0, ties: 0 },
+  )
+}
+
+/** Postseason rounds get a name; regular-season games get their week number. */
+export function weekLabel(game: GameSummary): string {
+  switch (game.gameType) {
+    case 'WC':
+      return 'Wild Card'
+    case 'DIV':
+      return 'Divisional'
+    case 'CON':
+      return 'Conf. Final'
+    case 'SB':
+      return 'Super Bowl'
+    default:
+      return `Week ${game.week}`
+  }
+}
+
+/** "Sep 8" — short, stable, and never "Invalid Date". */
+export function shortDate(iso: string): string {
+  const date = new Date(`${iso}T12:00:00Z`)
+  if (Number.isNaN(date.getTime())) return NO_VALUE
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+
+/**
+ * "Los Angeles Chargers" -> "Chargers".
+ *
+ * Every NFL club name ends in a single-word nickname, and the nicknames are
+ * unique, so the last token identifies a team unambiguously where the full
+ * name will not fit. Truncating instead collapsed both Los Angeles clubs and
+ * both New York clubs into the same string.
+ */
+export function teamNickname(name: string): string {
+  const parts = name.trim().split(/\s+/)
+  return parts.length > 1 ? parts[parts.length - 1] : name
+}
+
+/** "Week 12" -> "Wk 12"; postseason rounds keep a short name. */
+export function shortWeekLabel(game: GameSummary): string {
+  switch (game.gameType) {
+    case 'WC':
+      return 'WC'
+    case 'DIV':
+      return 'Div'
+    case 'CON':
+      return 'Conf'
+    case 'SB':
+      return 'SB'
+    default:
+      return `Wk ${game.week}`
+  }
+}
