@@ -1,14 +1,49 @@
+/**
+ * The route table: League -> Team -> Game.
+ *
+ * Pages are lazily loaded so a visitor to the league dashboard never downloads
+ * the replay code, which matters once Stage 5 lands.
+ */
+
+import { lazy, Suspense } from 'react'
+import { Link, Route, Routes } from 'react-router-dom'
+import Layout from '@/components/Layout'
+import { Loading } from '@/components/States'
+
+const LeaguePage = lazy(() => import('@/pages/LeaguePage'))
+const TeamPage = lazy(() => import('@/pages/TeamPage'))
+const GamePage = lazy(() => import('@/pages/GamePage'))
+
+function NotFound() {
+  return (
+    <div className="py-16">
+      <h1 className="text-lg font-semibold">Page not found</h1>
+      <p className="mt-2 text-sm text-neutral-400">That route does not exist.</p>
+      <Link
+        to="/"
+        className="mt-5 inline-block rounded-md bg-neutral-800 px-3 py-2 text-sm font-medium hover:bg-neutral-700"
+      >
+        Back to the league
+      </Link>
+    </div>
+  )
+}
+
 export default function App() {
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center">
-      <p className="text-xs font-semibold tracking-[0.2em] text-emerald-400 uppercase">
-        Stage 0 · Foundations
-      </p>
-      <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">NFL Season Hub</h1>
-      <p className="max-w-md text-sm text-neutral-400">
-        A six-season NFL explorer where you drill from league standings down to any individual game
-        and watch its momentum replay in real time.
-      </p>
-    </div>
+    <Routes>
+      <Route
+        element={
+          <Suspense fallback={<Loading />}>
+            <Layout />
+          </Suspense>
+        }
+      >
+        <Route index element={<LeaguePage />} />
+        <Route path="team/:id" element={<TeamPage />} />
+        <Route path="game/:id" element={<GamePage />} />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
   )
 }

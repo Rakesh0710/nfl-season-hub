@@ -73,12 +73,31 @@ etl/            Python ETL (own virtualenv)
 
 - [x] **Stage 0** — Foundations & setup
 - [x] **Stage 1** — Data layer (ETL)
-- [ ] **Stage 2** — App shell & routing
+- [x] **Stage 2** — App shell & routing
 - [ ] **Stage 3** — League dashboard
 - [ ] **Stage 4** — Team page
 - [ ] **Stage 5** — Game replay engine
 - [ ] **Stage 6** — Polish & cross-cutting
 - [ ] **Stage 7** — Engineering credibility layer
+
+## Routing and data access
+
+Three routes — `/`, `/team/:id`, `/game/:id` — rendered inside one shared layout, with pages lazily
+loaded so a league visitor never downloads the replay code.
+
+All data access goes through [src/lib/data.ts](src/lib/data.ts). Components never call `fetch`,
+never build a URL, and never see an untyped value. The cache stores the in-flight _promise_ rather
+than the resolved value, so two components asking for the same file share one request; rejected
+entries are evicted so failures can be retried.
+
+`useAsync(key, load)` returns a discriminated union, so a component cannot read `data` without
+first proving the request succeeded. Loading is derived from a stale key rather than stored, which
+is also what prevents a slow request for one team from overwriting a fast one for the next.
+
+`vercel.json` deliberately excludes `/data` from the SPA history fallback. Without that, a missing
+JSON file would return `index.html` with a 200, and the fetch layer would report a parse error
+instead of "not found". `vite preview` behaves exactly that way, which is why the data layer also
+checks the response content type before parsing.
 
 ## Decisions log
 

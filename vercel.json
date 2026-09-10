@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "comment": "SPA history fallback, but NEVER for /data. A missing JSON file must 404, not silently return index.html with status 200 - the fetch layer would then try to parse HTML as JSON and report a parse error instead of 'not found'.",
+      "source": "/((?!data/).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "comment": "Game files are the replay payload and are fetched on demand. They do change when the ETL is re-run, so they are not marked immutable; stale-while-revalidate serves instantly from cache while refreshing in the background.",
+      "source": "/data/game/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=86400, stale-while-revalidate=604800" }
+      ]
+    },
+    {
+      "comment": "Index files are small and change together with any data rebuild.",
+      "source": "/data/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" }
+      ]
+    }
+  ]
+}
