@@ -3,12 +3,14 @@
  * need and never manage fetch lifecycles themselves.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { DataError } from '@/lib/data'
 
 /** A request is always in exactly one of these states. */
 export type AsyncState<T> =
-  { status: 'loading' } | { status: 'error'; error: DataError } | { status: 'success'; data: T }
+  | { status: 'loading' }
+  | { status: 'error'; error: DataError; retry: () => void }
+  | { status: 'success'; data: T }
 
 /** A settled result, tagged with the key it belongs to. */
 type Settled<T> = { key: string; state: AsyncState<T> }
@@ -33,6 +35,10 @@ function toDataError(cause: unknown): DataError {
  */
 export function useAsync<T>(key: string, load: () => Promise<T>): AsyncState<T> {
   const [settled, setSettled] = useState<Settled<T> | null>(null)
+  // Bumping this re-runs the effect. The data cache evicts rejected entries,
+  // so a retry issues a genuinely new request rather than replaying a failure.
+  const [attempt, setAttempt] = useState(0)
+  const retry = useCallback(() => setAttempt((n) => n + 1), [])
 
   // `load` is a fresh closure every render, but only `key` should trigger a
   // refetch. This effect is declared first so the ref is current before the
@@ -51,13 +57,15 @@ export function useAsync<T>(key: string, load: () => Promise<T>): AsyncState<T> 
         if (active) setSettled({ key, state: { status: 'success', data } })
       })
       .catch((cause: unknown) => {
-        if (active) setSettled({ key, state: { status: 'error', error: toDataError(cause) } })
+        if (active) {
+          setSettled({ key, state: { status: 'error', error: toDataError(cause), retry } })
+        }
       })
 
     return () => {
       active = false
     }
-  }, [key])
+  }, [key, attempt, retry])
 
   return settled?.key === key ? settled.state : { status: 'loading' }
 }

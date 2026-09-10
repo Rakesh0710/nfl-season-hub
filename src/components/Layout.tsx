@@ -4,7 +4,9 @@
  * licence requires.
  */
 
+import { Suspense } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
+import { Loading } from '@/components/States'
 
 function navClass({ isActive }: { isActive: boolean }) {
   return [
@@ -37,7 +39,11 @@ export default function Layout() {
       </header>
 
       <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">
-        <Outlet />
+        {/* Inside the shell, so header, nav and the nflverse attribution stay
+            mounted while a lazily-loaded page chunk downloads. */}
+        <Suspense fallback={<Loading />}>
+          <Outlet />
+        </Suspense>
       </main>
 
       <footer className="border-t border-neutral-800">

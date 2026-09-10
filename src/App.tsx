@@ -5,10 +5,9 @@
  * the replay code, which matters once Stage 5 lands.
  */
 
-import { lazy, Suspense } from 'react'
+import { lazy } from 'react'
 import { Link, Route, Routes } from 'react-router-dom'
 import Layout from '@/components/Layout'
-import { Loading } from '@/components/States'
 
 const LeaguePage = lazy(() => import('@/pages/LeaguePage'))
 const TeamPage = lazy(() => import('@/pages/TeamPage'))
@@ -32,13 +31,7 @@ function NotFound() {
 export default function App() {
   return (
     <Routes>
-      <Route
-        element={
-          <Suspense fallback={<Loading />}>
-            <Layout />
-          </Suspense>
-        }
-      >
+      <Route element={<Layout />}>
         <Route index element={<LeaguePage />} />
         <Route path="team/:id" element={<TeamPage />} />
         <Route path="game/:id" element={<GamePage />} />

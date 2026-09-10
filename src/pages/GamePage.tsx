@@ -16,7 +16,7 @@ export default function GamePage() {
   const state = useAsync<Game>(`game/${id}`, () => getGame(id))
 
   if (state.status === 'loading') return <Loading label="Loading the replay data" />
-  if (state.status === 'error') return <ErrorState error={state.error} />
+  if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
   const game = state.data
   const keyPlays = game.plays.filter((p) => p.isKeyPlay)

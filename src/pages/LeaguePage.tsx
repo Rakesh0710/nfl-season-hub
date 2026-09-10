@@ -20,7 +20,7 @@ export default function LeaguePage() {
   })
 
   if (state.status === 'loading') return <Loading label="Loading the league" />
-  if (state.status === 'error') return <ErrorState error={state.error} />
+  if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
   const { teams, games } = state.data
   const seasons = [...new Set(games.map((g) => g.season))].sort()

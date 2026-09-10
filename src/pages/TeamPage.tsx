@@ -16,7 +16,7 @@ export default function TeamPage() {
   const state = useAsync<Team>(`team/${id}`, () => getTeam(id.toUpperCase()))
 
   if (state.status === 'loading') return <Loading label={`Loading ${id.toUpperCase()}`} />
-  if (state.status === 'error') return <ErrorState error={state.error} />
+  if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
   const team = state.data
   const { wins, losses, ties } = team.lastSeason
