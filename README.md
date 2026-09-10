@@ -1,356 +1,492 @@
 # NFL Season Hub
 
-A six-season NFL explorer where you drill from league standings down to any individual game
-and watch its momentum replay in real time.
+Six NFL seasons you can drill through — league standings, any team, any game — ending in a
+scrubbable, animated replay of how that game's win probability actually moved.
 
-**League → Team → Game → Replay**
+**League → Team → Game → Replay.** 2020–2025. 1,693 games, 273,325 plays. No backend.
 
-- **League dashboard** — all 32 teams, sortable by projected wins, last-season record, or division.
-- **Team page** — roster, depth chart, draft class, projected win total, team stats, and that team's games.
-- **Game replay** — an animated, scrubbable win-probability timeline with key plays marked, rendered
-  on HTML Canvas at 60fps.
+![The game replay: a win-probability curve for Vikings 39, Colts 36, with key plays marked along
+the timeline and the play context below it](docs/replay.png)
 
-Data scope: **2020–2025** (six complete seasons).
+---
+
+## Problem
+
+Play-by-play NFL data is public and excellent — nflverse publishes every play of every game since
+1999, win probability included — and almost entirely unreadable. It arrives as season-sized parquet
+files with hundreds of columns, which is wonderful for a modelling notebook and useless if the
+question you actually have is _"what did that comeback look like?"_
+
+The gap is not the data. It is that nothing turns a row of `home_wp = 0.11` into the thing a
+person came for: the shape of a game.
+
+## Product
+
+A static site that takes a visitor from all 32 teams down to a single play in three clicks, and
+then plays the game back to them.
+
+- **League dashboard** — 32 teams sortable by projected wins, last-season record or division, and
+  filterable by conference and division. The view lives in the URL, so a filtered dashboard is a
+  link you can send someone.
+- **Team page** — projected wins against last season's result, offensive and defensive splits,
+  depth chart, roster and draft class, and every game that season as a route into its replay.
+- **Game replay** — the flagship. The home team's win probability animates across the game one
+  play at a time on an HTML canvas, with the plays the ETL flagged as decisive marked along the
+  timeline, a scrubber to drag, and a context box that always says where the game stands.
+
+## Demo
+
+> **Live demo:** _to be added once this repository is deployed._ `vercel.json` is committed and
+> the build is static, so a deploy is a one-click import. Until then, `npm install && npm run dev`
+> is about ten seconds to a running app — the data is committed to the repository.
+
+| League dashboard     | Team page          |
+| -------------------- | ------------------ |
+| ![](docs/league.png) | ![](docs/team.png) |
+
+_(Screenshots are captured from the production build by Playwright; see
+`docs/`. There is no recorded GIF of the replay — the animation is best seen by running it.)_
+
+## Key features
+
+- **60fps canvas replay** with play/pause, restart, 0.5×/1×/2×, a draggable scrubber and a
+  key-play rail — all driven from a single fractional play cursor.
+- **Every control reachable by keyboard**, including the 41-marker key-play rail, which is one
+  tab stop with arrow-key navigation.
+- **Contrast measured, not assumed** — team colours are lifted to WCAG thresholds against the
+  surface they are actually drawn on, so all 32 clubs get a legible curve without losing their
+  hue.
+- **Runtime-validated data contract** — every JSON file is checked field by field before the app
+  sees it, and a violation names the exact path that disagreed.
+- **No backend, no database, no runtime data processing.** Static JSON on a CDN.
+
+---
 
 ## Architecture
 
-No live server, no database. A Python ETL runs locally, emits small typed JSON files that are
-committed to `public/data`, and the React app fetches them as static assets.
+```
+                    nflverse
+   (play-by-play, rosters, depth charts, draft, schedules)
+                        │
+                        ▼
+              Python ETL  (polars)
+    etl/build_data.py — run once, locally, by hand
+                        │
+                        ▼
+             Typed static JSON  ×1,727
+   teams-index · games-index · team/<ID> · game/<GAME_ID>
+                        │
+              etl/validate.py enforces the contract
+                        │
+                        ▼
+          committed to public/data  (80 MB on disk, ~15 MiB packed in git)
+                        │
+                        ▼
+             React 19 + TypeScript + Vite
+   src/lib/data.ts  →  runtime contract check  →  typed values
+                        │
+                        ▼
+              Canvas replay + requestAnimationFrame
+                        │
+                        ▼
+                  Vercel (static)
+```
+
+_(The stage brief sketched this with pandas. The ETL is polars: `nflreadpy` returns polars frames
+natively, so pandas would only add conversions in both directions. Nothing imports it.)_
+
+The whole design follows from one decision: **the data never changes at runtime.** A finished
+season is a fact. That removes the database, the API, the cache-invalidation problem and the
+cold-start latency in one move, and replaces them with a build step someone runs when a new week
+of football happens.
+
+### Routing and data access
+
+Three routes — `/`, `/team/:id`, `/game/:id` — inside one shared layout, each page a lazy chunk,
+so a league visitor never downloads the replay engine.
+
+All data access goes through [src/lib/data.ts](src/lib/data.ts). Components never call `fetch`,
+never build a URL, and never see an untyped value. The cache stores the in-flight _promise_
+rather than the resolved value, so two components asking for the same file share one request;
+rejected entries are evicted so failures can be retried.
+
+`useAsync(key, load)` returns a discriminated union, so a component cannot read `data` without
+first proving the request succeeded. Loading is _derived_ from a stale key rather than stored,
+which is also what stops a slow request for one team from painting over a fast one for the next.
+
+### Deployment
+
+`vercel.json` cannot carry comments — Vercel validates it with `additionalProperties: false`, so
+even a `"comment"` key fails the build. The reasoning therefore lives here:
+
+- **`"source": "/((?!data/).*)"`** — the SPA history fallback deliberately excludes `/data`.
+  Without the exclusion a missing JSON file returns `index.html` with a 200 and the fetch layer
+  reports a parse error instead of "not found". `vite preview` behaves exactly that way, which is
+  why `src/lib/data.ts` _also_ rejects non-JSON content types; the two environments differ, so
+  both guards are needed, and the end-to-end suite runs against `vite preview` for that reason.
+- **`stale-while-revalidate`, not `immutable`** — game files are not content-hashed and do change
+  when the ETL is re-run, so `immutable` would strand visitors on stale data. Game files get a day
+  of freshness and a week of stale-serving; the small index files get an hour.
+
+---
+
+## Data model
+
+Four file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
+
+| File                  | Count | Size (raw / gzip)    | Contents                                              |
+| --------------------- | ----: | -------------------- | ----------------------------------------------------- |
+| `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection  |
+| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,693 games: ids, dates, scores, type                 |
+| `team/<ID>.json`      |    32 | ~23 KB               | roster, depth chart, draft class, splits, games       |
+| `game/<GAME_ID>.json` | 1,693 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob |
+
+A game averages 6.8 KB over the wire, which is why a replay can load on demand with no backend.
+
+Two rules make the contract hold:
+
+**Absent means absent.** An unknown value is _omitted_ from the JSON, never emitted as `null`.
+`null` does not satisfy `number | undefined` under `strict`, so omission is the only
+representation that typechecks — and it means "no down on this play" (a kickoff) never renders as
+a placeholder pretending to be data.
+
+**`isKeyPlay` is decided once, in the ETL.** A score, a turnover, or a win-probability swing of at
+least ten points. The UI reads that flag and never applies a rule of its own, so the beads on the
+curve and the markers on the timeline can never come to mean different things.
+
+### Validation happens twice, from both sides
+
+[`etl/validate.py`](etl/validate.py) checks all 1,727 generated files against the contract from
+the producing side, and is itself verified by fault injection. It caught four real defects:
+non-chronological `play_id`, timeout rows carrying stale scores, playoff games inflating
+per-game rates, and a 2025 depth-chart schema change upstream.
+
+[`src/lib/contract.ts`](src/lib/contract.ts) checks the same contract from the consuming side, at
+runtime, in the browser. `response.json()` hands back an `unknown`, and the usual `as Game` turns
+a stale deploy or a half-written ETL run into a crash somewhere far away from the fetch that
+caused it. Instead every field is checked at the one place untrusted data enters the app, and a
+failure reads:
 
 ```
-nflverse (raw play-by-play, rosters, draft, win totals)
-        |
-  [ Python ETL script — run once ]
-        |
-  trimmed, typed static JSON files
-  (teams-index, team/<id>, games-index, game/<id>)
-        |
-    committed to /public/data
-        |
-  React + TypeScript app (fetches static JSON)
-        |
-    static deploy (Vercel)
+/data/game/2023_12_NO_ATL.json does not match the data contract —
+game.plays[0].homeWinProb: expected a finite number, received "0.5"
 ```
 
-## Tech stack
+The parsers return the interfaces from `types/nfl.ts` **by annotation**, so adding a property to
+the contract is a compile error until it is checked. Past that module the types are earned rather
+than asserted, which is why no other file in the application needs a type assertion at all.
 
-| Layer         | Choice                                | Why                                         |
-| ------------- | ------------------------------------- | ------------------------------------------- |
-| Data source   | nflverse (`nflreadpy`)                | Free, open, CC BY 4.0, 1999–2025            |
-| ETL           | Python + pandas                       | Raw play-by-play → small, typed JSON        |
-| Framework     | React + TypeScript + Vite             | Fast dev; TS as the data contract           |
-| Routing       | React Router                          | Powers the League → Team → Game hierarchy   |
-| Styling       | Tailwind CSS v4                       | Speed; easy theming with team colors        |
-| Charts (v1)   | Recharts                              | Fast way to validate the win-prob data      |
-| Replay engine | HTML Canvas + `requestAnimationFrame` | The 60fps flagship                          |
-| UI animation  | Framer Motion                         | Page transitions, reveals, number count-ups |
-| Linting       | oxlint + Prettier                     | Vite's current default linter               |
-| Deploy        | Vercel (static)                       | No backend needed                           |
+---
 
-## Getting started
+## Replay architecture
+
+The replay is the reason the project exists, and it is the one place where the obvious React
+approach is the wrong one.
+
+**Why not React state.** The animation advances a cursor 60 times a second. Storing that cursor in
+`useState` means a render, a reconciliation and a commit per frame — for a chart whose only actual
+change is a few hundred pixels of line. That is a lot of machinery to move a dot.
+
+**What it does instead.** The cursor is a `useRef`, a fractional play index. A `requestAnimationFrame`
+loop advances it by elapsed time and repaints the canvas directly. One frame costs one canvas
+repaint and nothing else.
+
+**How React finds out.** The two facts a person can actually see — whether it is running, and which
+play it is on — are published through `useSyncExternalStore`, which is React's supported way to
+read state that lives outside React. It re-renders when the _value_ changes: once per play, not
+once per frame. On a 218-play game at 1×, that is eight renders a second instead of sixty.
+
+```
+     rAF loop ──writes──▶  cursor (ref)  ──read by──▶  canvas repaint      60×/s
+                                │                       scrubber thumb     60×/s
+                                └──published via useSyncExternalStore──▶ React  8×/s
+```
+
+Some consequences worth naming, each of which was a bug first:
+
+- **Position is derived from elapsed time, never from a frame count.** A dropped frame slows the
+  replay by a frame's worth; it does not push it out of step with the clock.
+- **A single frame may advance the cursor by at most 100ms.** `requestAnimationFrame` stops firing
+  in a background tab, so the first frame after returning can carry minutes of wall time and would
+  otherwise jump the replay to the final whistle.
+- **The canvas is measured in a `ResizeObserver`, never inside a frame.** Reading
+  `getBoundingClientRect()` during a frame forces a synchronous layout whenever anything has
+  dirtied the DOM — which the scrubber does every frame by writing its own progress. Moving the
+  measurement took forced layouts during playback from 60 a second to none.
+- **The scrubber thumb is written imperatively**, from the same cursor, to a thousandth of the
+  track. Sub-pixel writes are skipped — except across a play boundary, because a skipped write
+  there once left the thumb reporting a different play from the readout beside it.
+- **The drawing module is pure.** A context, a size and a cursor go in; pixels come out. Nothing in
+  it reads the clock, React state, or the DOM. The same code renders the running animation, a
+  paused frame, and any position a scrubber is dragged to — and it can be tested against a
+  recording context with no browser at all.
+
+---
+
+## Technical decisions
+
+**Static JSON over a backend or API.** The data is historical and immutable; there is nothing to
+serve dynamically. The cost is a 15 MiB repository and a manual re-run when a new week lands. The
+benefit is no server, no database, no cold start, no runtime failure mode more complex than a 404,
+and a CDN that can cache everything. For a dataset that is finished, this is the right shape.
+
+**Recharts first, then a custom canvas.** The win-probability chart was built in Recharts in an
+earlier stage — deliberately, as a way to validate the data before investing in the flagship. It
+did that job and was then deleted. A charting library was never going to give per-frame control of
+a 218-point animated reveal, and shipping both would have cost the bundle twice. Validating first
+and replacing second is cheaper than either guessing or building the hard thing twice.
+
+**Local ETL over runtime processing.** Parsing 273,325 plays takes minutes; doing it per request
+would be absurd, and doing it in a serverless function would reintroduce the backend the design
+exists to avoid. The tradeoff is that data freshness is a human action.
+
+**Imperative animation state over React state.** Covered above. The cost is that the replay's
+cursor is not inspectable in React DevTools and cannot be driven by a React render; the benefit is
+that the frame budget is spent on drawing.
+
+**`useSyncExternalStore` over a mutable ref plus a forced re-render.** The loop genuinely _is_ an
+external system on a different clock. Using React's own escape hatch for that keeps it correct
+under concurrent rendering instead of relying on the render phase seeing a mutation it should not.
+
+**Framer Motion, but only in the pages that animate.** It is 26 kB gzipped. Importing it into the
+shared layout for one page-transition fade put it in front of every first visit, including game
+pages that never used it — the entry chunk went from 84 kB to 110 kB. That transition is now nine
+lines of CSS, and the motion runtime is confined to the League and Team chunks, loaded with
+`LazyMotion` and the lightweight `m` components.
+
+**oxlint over ESLint.** It is what `create-vite` scaffolds now; same role, considerably faster.
+
+**`nflreadpy` over `nfl_data_py`.** The latter is deprecated upstream and pins `pandas<2`/`numpy<2`,
+which have no Python 3.12 wheel — it will not install on a current interpreter.
+
+**`projectedWins` is market-implied, not a Vegas over/under.** The nflverse win-totals dataset was
+discontinued after 2020. Each game's closing spread is converted to a win probability and summed
+across the regular season, which covers all six seasons instead of one. The dashboard says so.
+
+**Team logos are requested at the size they are drawn.** nflverse stores ESPN's 500×500 master, 42
+to 79 KB per club. The league dashboard drew 32 of them at 40px: measured at **1,789 KiB** of
+image for one page. ESPN's own image combiner resizes on their CDN, so the app asks for twice the
+CSS size and the same page now weighs **262 KiB**. Nothing is proxied or re-hosted, and a URL from
+any other origin passes through untouched.
+
+---
+
+## Testing
+
+```
+216 unit and component tests   13 files   Vitest + React Testing Library
+ 6 end-to-end specs            ×2 devices  Playwright (desktop Chrome, Pixel 5)
+```
+
+The tests are aimed at behaviour that could plausibly break, not at a coverage number.
+
+| Area                     | What is actually asserted                                                                                                                                                         |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| League sorting/filtering | every sort key and direction, the name tiebreak, immutability of the input, contradictory URL params                                                                              |
+| URL state                | round-trips, unknown values falling back, a division that contradicts its conference losing                                                                                       |
+| Data layer               | 404 → not-found, HTML-with-a-200 → not-found, truncated JSON → malformed, contract violation → malformed                                                                          |
+| Request cache            | concurrent callers share one fetch, failures are evicted and retryable                                                                                                            |
+| Contract                 | the real generated files parse; each failure mode names its path; extra fields are tolerated                                                                                      |
+| Replay control state     | seek-while-paused stays paused, seek-while-playing continues, Play rewinds a finished replay but resume does not, no two loops ever run, the frame handle is cancelled on unmount |
+| Frame pacing             | a 120-second frame (a backgrounded tab) advances 0.8 of a play, not the whole game                                                                                                |
+| Canvas drawing           | `indexAtOffset` inverts `xForIndex` for every play at three widths; beads appear only once passed; a non-finite cursor still draws                                                |
+| Colour                   | all 32 real team colours clear 3:1 on the card and on the bar track, and AA as badge text                                                                                         |
+| Components               | loading, error, retry, empty and not-found states; keyboard operation of the whole transport                                                                                      |
+
+Two examples of tests that exist because the bug happened:
+
+```ts
+it('keeps Restart enabled, so pressing it never drops focus to the body', ...)
+it('never reports a different play from the readout beside it', ...)
+```
+
+The end-to-end suite drives the production build served by `vite preview`, clicking from the
+league dashboard through to a replay, dragging the scrubber, selecting a key play and operating
+the transport with the keyboard alone. One test clicks a key-play marker **as a pixel rather than
+as an element**: markers cluster, so on a phone a neighbour's 24px hit box covers the target and
+Playwright's actionability check refuses the click, while a real finger lands there anyway. The
+rail resolves clicks to the nearest marker for exactly that reason, and that is what the test is
+for.
+
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and pull request:
+
+| Job      | Steps                                                                                     |
+| -------- | ----------------------------------------------------------------------------------------- |
+| `verify` | `npm ci` → typecheck → lint → format check → 216 tests → production build → bundle report |
+| `data`   | `etl/validate.py` against the committed JSON (stdlib only; no ETL run needed)             |
+| `e2e`    | Playwright against the built app, report uploaded as an artifact                          |
+
+---
+
+## Performance
+
+Everything below is measured, not estimated. Lighthouse 13.4.1 against the production build served
+by `vite preview` on localhost, headless Chrome, desktop preset and the default mobile preset
+(4× CPU throttling, simulated slow 4G). Machine benchmark index 2964.
+
+| Page   | Form    | Perf | A11y | Best practices | SEO | FCP   | LCP   | TBT   | CLS   | Page weight |
+| ------ | ------- | ---: | ---: | -------------: | --: | ----- | ----- | ----- | ----- | ----------: |
+| League | desktop |  100 |  100 |            100 | 100 | 0.4 s | 0.4 s | 0 ms  | 0.046 |     262 KiB |
+| Team   | desktop |   99 |  100 |            100 | 100 | 0.4 s | 0.5 s | 0 ms  | 0.069 |     168 KiB |
+| Game   | desktop |  100 |  100 |            100 | 100 | 0.4 s | 0.4 s | 0 ms  | 0.005 |     122 KiB |
+| League | mobile  |   99 |  100 |            100 | 100 | 1.6 s | 2.0 s | 0 ms  | 0     |     219 KiB |
+| Team   | mobile  |   97 |  100 |            100 | 100 | 1.7 s | 2.4 s | 10 ms | 0     |     168 KiB |
+| Game   | mobile  |   99 |  100 |            100 | 100 | 1.5 s | 1.7 s | 0 ms  | 0.033 |     122 KiB |
+
+### Frame rate
+
+240 consecutive frames during playback of the longest game in the dataset (2022 week 15,
+IND at MIN, 218 plays, overtime), in the production build:
+
+```
+median frame  16.70 ms      p95  16.80 ms      worst  16.80 ms
+frames over 33 ms (a dropped frame): 0 / 239
+long tasks (>50 ms) during 3 s of playback: 0
+```
+
+That is the 60 Hz budget, held. Profiled separately, all canvas drawing costs **0.14 ms per
+frame** and the axis labels **0.03 ms** of a 16.7 ms budget — which is why the obvious
+optimisation of caching the static background to an offscreen bitmap was measured, found to cost
+more in blitting than it saved, and not done.
+
+### Bundle
+
+```
+index      265.52 kB   84.40 kB gzip   React, React Router, the shell — every page
+league      76.31 kB   26.67 kB gzip   Framer Motion — League and Team only
+CSS         30.25 kB    6.45 kB gzip
+GamePage    17.81 kB    6.27 kB gzip   the replay engine — only on a game page
+TeamPage    16.33 kB    4.76 kB gzip
+useAsync     7.68 kB    3.12 kB gzip   data layer + runtime contract
+LeaguePage   7.58 kB    2.66 kB gzip
+football     2.53 kB    1.25 kB gzip
+```
+
+**Lazy loading, verified from the network log rather than from the config:** loading the league
+dashboard requests `index`, `LeaguePage`, `useAsync` and `league` — 114 KiB of JavaScript — and
+neither `GamePage` nor `TeamPage`. The replay engine is downloaded when, and only when, someone
+opens a game.
+
+**What the runtime contract costs.** Validating the largest file the app loads — the 239 KB,
+1,693-game index — takes **0.23 ms**, against the **0.57 ms** `JSON.parse` spends on the same
+file. It adds **1.17 kB gzipped** to the shared data chunk (1.85 → 3.02 kB), measured by building
+the previous commit and diffing. Because validation is that cheap, the cache stores the unchecked
+JSON and re-validates on each read, rather than storing a typed value the cache would have to
+assert the type of.
+
+### What is left on the table, and why
+
+- **`unused-javascript`, 36 KiB.** React and Router code not executed during first paint. Real,
+  but not separable without shipping a different framework.
+- **CLS 0.069 on the team page.** The only element that moves is the footer: while the skeleton is
+  showing, the page is exactly one viewport tall, so the footer is on screen; when 5,542px of team
+  page arrives, it moves below the fold. Both figures are inside Google's "good" threshold (<0.1),
+  and closing the gap would mean the skeleton knowing the size of the data it is waiting for.
+  Padding the skeleton until the footer starts off-screen would improve the metric and not the
+  experience.
+- **Third-party cache headers, ~48 KiB.** The logos are served by ESPN's CDN with their cache
+  policy, not ours.
+
+---
+
+## Accessibility
+
+The audit was run with the keyboard only, and the numbers came from the rendered page rather than
+from reading the CSS. Lighthouse scores accessibility **100 on all three pages**, on both form
+factors — but Lighthouse's automated checks are a floor, not the audit. The rest of this was found
+by hand:
+
+- **Every control is reachable and every stop is visible.** League 44 tab stops, Team 30, and the
+  replay fully operable at 320px. Focus escapes every page; there are no traps.
+- **The key-play rail is one tab stop.** A game carries up to 41 markers; forty-one stops between
+  the scrubber and the Play button would be a wall. Roving tabindex with arrow, Home and End keys.
+- **Text contrast is measured against the composited background.** Tailwind v4 serialises colours
+  as `oklch()`, so each colour is painted into a canvas and read back rather than parsed — a regex
+  produced 60+ false failures before that. Two real failures were found and fixed
+  (`text-neutral-600` at 2.46:1, `text-neutral-500` at 4.05:1); all 88 distinct text styles across
+  four pages now clear 4.5:1.
+- **Graphics that carry meaning clear 3:1.** The replay curve against the card, and every bar fill
+  against its track — enforced by a test that reads the real team index, because nine and twelve
+  clubs respectively failed before it existed.
+- **`prefers-reduced-motion` is honoured everywhere**, including the skeleton pulse and the
+  count-ups. With reduced motion the replay renders the finished curve immediately, with the
+  transport still there if you want to watch it play.
+- **Native semantics are not re-labelled.** Buttons are buttons, the scrubber is an
+  `<input type="range">` with an `aria-valuetext` that says "Play 42 of 218, Q3 6:12, NO 17, ATL
+  24, ATL 71 percent" rather than "42". ARIA appears only where there is no native equivalent.
+- **Restart is never disabled.** Disabling it on reaching play 0 — which pressing it does — moved
+  focus to `BODY`, so a keyboard user lost their place the moment the button worked.
+
+---
+
+## Running locally
 
 ```bash
 npm install
-npm run dev        # http://localhost:5173
-npm run build      # typecheck + production build
-npm run lint       # oxlint
-npm run format     # prettier --write .
+npm run dev            # http://localhost:5173
+
+npm run typecheck      # tsc -b, four projects: app, node, tests, e2e
+npm run lint           # oxlint
+npm run format         # prettier --write .
+npm test               # Vitest, 216 tests
+npm run test:coverage  # with a v8 coverage report
+npm run e2e            # Playwright (builds and serves the app itself)
+npm run build          # typecheck + production build
+npm run verify         # everything CI runs, in order
 ```
 
-## Project structure
+Playwright needs its browser once: `npx playwright install chromium`.
 
+The generated data is committed, so nothing above needs Python or a network round trip to
+nflverse.
+
+## ETL instructions
+
+Only needed to regenerate or extend the dataset.
+
+```bash
+cd etl
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt      # nflreadpy, polars, pyarrow — pinned exactly
+
+python build_data.py                 # writes ../public/data (80 MB, a few minutes)
+python validate.py --data ../public/data
 ```
-src/
-  components/   reusable UI
-  pages/        route-level screens
-  lib/          typed data-access layer (fetch + cache)
-  types/        TypeScript interfaces mirroring the JSON contract
-public/data/    ETL output (static JSON, committed)
-etl/            Python ETL (own virtualenv)
-```
 
-## Build progress
+`requirements.txt` pins exact versions on purpose: `nflreadpy` is pre-1.0 and its loaders have
+already changed shape once (the 2025 depth-chart schema), so a floating range would make the
+pipeline silently non-reproducible.
 
-- [x] **Stage 0** — Foundations & setup
-- [x] **Stage 1** — Data layer (ETL)
-- [x] **Stage 2** — App shell & routing
-- [x] **Stage 3** — League dashboard
-- [x] **Stage 4** — Team page
-- [x] **Stage 5** — Game replay engine
-- [x] **Stage 6** — Polish & cross-cutting
-- [ ] **Stage 7** — Engineering credibility layer
-
-## Routing and data access
-
-Three routes — `/`, `/team/:id`, `/game/:id` — rendered inside one shared layout, with pages lazily
-loaded so a league visitor never downloads the replay code.
-
-All data access goes through [src/lib/data.ts](src/lib/data.ts). Components never call `fetch`,
-never build a URL, and never see an untyped value. The cache stores the in-flight _promise_ rather
-than the resolved value, so two components asking for the same file share one request; rejected
-entries are evicted so failures can be retried.
-
-`useAsync(key, load)` returns a discriminated union, so a component cannot read `data` without
-first proving the request succeeded. Loading is derived from a stale key rather than stored, which
-is also what prevents a slow request for one team from overwriting a fast one for the next.
-
-### `vercel.json`
-
-The file cannot carry comments — Vercel validates it with `additionalProperties: false`, so even a
-`"comment"` key fails the build. The reasoning therefore lives here:
-
-- **`"source": "/((?!data/).*)"`** — the SPA history fallback deliberately excludes `/data`.
-  Without the exclusion a missing JSON file returns `index.html` with a 200, and the fetch layer
-  reports a parse error instead of "not found". `vite preview` behaves exactly that way, which is
-  why `src/lib/data.ts` _also_ rejects non-JSON content types; the two environments differ, so both
-  guards are needed.
-- **`stale-while-revalidate`, not `immutable`** — game files are not content-hashed and do change
-  whenever the ETL is re-run, so `immutable` would strand visitors on stale data. Game files get a
-  day of freshness and a week of stale-serving; the small index files get an hour.
-
-### League dashboard
-
-The view (sort, direction, conference, division) lives in the query string, so a filtered dashboard
-is shareable and survives a refresh. Unrecognised or contradictory values fall back to defaults
-rather than rendering an empty grid.
-
-Team colours are applied by measurement, not assumption. Six teams — New Orleans, Tennessee,
-Cincinnati, Cleveland, Miami and Carolina — fail WCAG AA with white text on their primary colour
-(New Orleans' gold manages 1.85:1), so [src/lib/colors.ts](src/lib/colors.ts) computes the
-foreground per team. Near-black primaries fall back to the secondary colour for the accent stripe,
-which would otherwise be invisible on a near-black page.
-
-Framer Motion is loaded through `LazyMotion` with only the `domAnimation` feature set, which cut
-the dashboard chunk from 42.2 KB to 29.0 KB gzipped. `strict` mode makes reaching for a heavier
-`motion.*` component a runtime error rather than a silent regression.
-
-### Team page
-
-Sections are laid out in one scroll with an anchor nav rather than behind tabs, and Games comes
-first — it is the route into the replay, which is the point of the application.
-
-Optional player fields are genuinely absent in the data: 163 players have no age and 182 no
-college. `PlayerChip` builds its detail line by filtering, so a missing value leaves no separator
-and no placeholder behind, and the line degrades to just a name.
-
-nflverse returns the whole season's roster, not the 53-man active list — a team carries 95-110
-names including released, reserve and practice-squad players. The roster therefore defaults to
-active, with the full list one click away.
-
-Stat bars print their scale endpoints, because a team file carries only its own numbers and there
-is no league distribution here to rank against. EPA per play spans zero, so it is drawn outwards
-from a zero line rather than as a short bar.
-
-### Game replay
-
-The replay is drawn on a `<canvas>` by a `requestAnimationFrame` loop, and the division of labour
-is the whole design:
-
-- `lib/replayCanvas.ts` is pure drawing — a context, a size and a play cursor in, pixels out. It
-  never reads the clock or React state, so a frame is fully determined by its cursor position. The
-  scrubber in 5C needs exactly that property.
-- `lib/useReplay.ts` owns the loop. The cursor, the previous frame's timestamp and the pending
-  frame handle live in refs; none of them causes a render. The two things a person can see —
-  whether it is running, and which play it is on — are published through `useSyncExternalStore`,
-  which fires only when the value changes.
-- `components/WinProbCanvas.tsx` is an ordinary React shell that never touches the canvas.
-
-Measured in Chrome: **60 canvas frames per second against 8 React renders per second** — 0.13
-renders per frame, one per play rather than one per frame. Exactly one animation-frame callback is
-ever outstanding, verified under repeated play, pause, restart and game changes.
-
-The x axis is play order, not elapsed time. Several plays legitimately share one timestamp (a
-kickoff and the snap after it are both logged at 15:00), so a 174-play game has only 146 distinct
-elapsed seconds and a time axis silently collides points.
-
-A frame may advance the cursor by at most 100ms of game time. `requestAnimationFrame` stops firing
-in a hidden tab, so the first frame back can carry minutes of wall time and would otherwise skip
-the replay to the final whistle; capping the step means a backgrounded tab holds its place. Device
-pixel ratio is honoured but capped at 2 — backing-store pixels grow with its square, and a third
-multiple buys nothing visible on a two-pixel line.
-
-### Transport
-
-There is exactly one playback position: a fractional play index in a ref. The canvas, the scrubber
-thumb, the track fill and the readout all render from that one value, so they cannot disagree —
-sampled 30 times during playback, the readout and the scrubber never diverged. Nothing derives
-position from a frame count either, so a dropped frame slows the replay rather than pushing it out
-of step.
-
-The scrubber is a native `<input type="range">`: role, drag, and value announcement come for free.
-Two things are added on top. Its track is continuous so the thumb can follow the cursor smoothly,
-which would otherwise leave the browser moving by a hundredth of the game per arrow press, so the
-arrow keys are handled explicitly — one play each, ten for page keys, Home and End for the
-whistles. And `aria-valuetext` carries the period, clock, score and probability, because a bare
-play index tells a screen-reader user nothing about where they are.
-
-Seeking never changes whether the replay is running: paused stays paused, playing carries on from
-the new position. A pointer drag is the exception — playback is suspended while the thumb is held,
-because otherwise the target moves out from under it, and resumes on release.
-
-Deferring a write is allowed to leave the thumb a fraction of a pixel behind, but never a whole
-play behind. The readout moves the instant the cursor crosses a boundary, and a deferral that
-straddled one made the slider report a different play from the text beside it — invisible on
-screen at under a pixel, but a real disagreement between two things that share a source. Sampled
-on every frame in-page, 1,080 frames across all three speeds, the thumb never lags the readout.
-
-Syncing the thumb every frame is the most expensive thing outside the canvas. Measured by neutering
-each write in turn on one build: moving the thumb costs about 10ms of layout per second, and
-refilling the track about 17ms of style recalculation. Skipping writes finer than a thousandth of
-the track — under a pixel at any width this control gets — cut both by roughly a third, to 39
-layouts and 37 style recalculations a second, with no visible change to the thumb.
-
-### Game context and key plays
-
-`isKeyPlay` is the whole definition of a key play — a score, a turnover, or a win-probability swing
-of at least ten points, decided once in `etl/build_data.py`. The UI reads the flag and never
-applies a rule of its own, so the beads drawn on the curve and the markers on the timeline can
-never disagree about which plays matter. Checked against the source across four games: marker count
-and marker position match `isKeyPlay` exactly, 84 of them.
-
-A game carries fifteen key plays on average and up to forty-one, so the marker rail is a single tab
-stop with the arrow keys walking it, rather than forty-one stops between the scrubber and the Play
-button. It sits below the track rather than on it, because markers laid over the scrubber would eat
-the drag area that is the scrubber's main job.
-
-Key plays cluster — a touchdown, its extra point and the following kickoff are consecutive plays —
-so markers sit a median of fifteen pixels apart on a desktop, and three on a phone, against a 24px
-hit area. Stacked hit boxes hand the click to whichever marker is later in the DOM: aiming at the
-centre of each of the forty-one markers in the densest game landed on a different play **nineteen
-times**. The rail therefore resolves a pointer click to the nearest marker itself, in the capture
-phase, leaving keyboard activation (which arrives with a click detail of 0) to the focused button.
-After the change, 168 of 168 aimed clicks land on the marker aimed at, at desktop and tablet widths.
-On a phone two markers one play apart fall about 1.4px from each other, closer than a pointer
-coordinate can address; the arrow keys reach every marker exactly.
-
-The context box is ordered by what a reader needs first: clock and score, then down, distance and
-possession, then the description, and only then win probability and EPA in the smallest, quietest
-type. Down and distance are dropped entirely when the play has none — 26,227 plays across the six
-seasons are kickoffs and the like — rather than printed as a placeholder that would read as missing
-data instead of inapplicable.
-
-Hovering the canvas draws a hairline and a compact tooltip; clicking seeks there. The pointer's
-offset comes from the event, so hovering never measures the DOM, and the hovered play reaches React
-only when it changes to a different play. Measured while playing at 2x with the pointer sweeping the
-plot at 60 moves a second: **59.9fps unthrottled, 59.5fps with the CPU throttled 6x**.
-
-### Team colour on the replay
-
-The curve is the content, not decoration, so it owes the 3:1 that WCAG 1.4.11 asks of a meaningful
-graphic. Nine of the 32 primary colours missed that against the card — the Jets' green managed
-1.65:1 — and a further thirteen were being replaced wholesale by a neutral, which made a third of
-the league draw an identical grey line.
-
-`legibleOn` keeps the hue and mixes it toward white until it clears the bar. All 32 teams now pass,
-between 3.01:1 and 10.36:1, and nine were already legible and are untouched. Contrast is measured
-against the card — `bg-neutral-900/40` over `bg-neutral-950`, so `#0f0f0f` — not against the page
-behind it; measuring against the page put three teams a hundredth or two under the bar while the
-arithmetic said they passed. Verified from rendered pixels, not from the arithmetic.
-
-The League dashboard and Team page still use the older decorative threshold; those are Stage 6's
-accessibility pass.
-
-### Measured, not asserted
-
-Recharts was the Stage 5A baseline, used to validate the data before any animation was built on it.
-It has been removed now that the canvas engine is verified — one runtime dependency and 9.3 MB of
-`node_modules` gone. The shipped bundle is unchanged, because the dev-only branch guarding it had
-already kept it out: the game chunk dropped from **105 kB gzipped to 3.8 kB** when the canvas
-replaced it.
-
-Frame cadence is measured from the timestamps of the app's own draw calls, in headless Chrome with
-the GPU enabled — `--disable-gpu` forces software rasterisation and roughly doubles every canvas
-number. A 218-play game, playing at 1x:
-
-| CPU throttle | fps  | median frame | p95 frame | frames > 33ms | JS per frame |
-| ------------ | ---- | ------------ | --------- | ------------- | ------------ |
-| none         | 60.0 | 16.7ms       | 17.4ms    | 0             | 0.41ms       |
-| 4x           | 60.0 | 16.7ms       | 17.5ms    | 0             | 0.41ms       |
-| 6x           | 60.0 | 16.6ms       | 17.7ms    | 0             | 0.57ms       |
-| 10x          | 60.0 | 16.7ms       | 18.5ms    | 0             | 0.99ms       |
-| 20x          | 59.2 | 16.5ms       | 25.0ms    | 2             | 1.72ms       |
-
-Sixty holds to a tenfold CPU handicap, and a phone-sized canvas behaves the same. Every canvas call
-together costs **0.14ms of a 16.7ms frame**, of which the axis labels are 0.03ms — which is why the
-static background is redrawn every frame rather than cached to an offscreen bitmap. That
-optimisation was flagged as a candidate at two earlier checkpoints; profiling it showed the blit
-would cost more than the redraw, so it was not written.
-
-Resizing repaints exactly once per size change, and not at all when a viewport change does not
-alter the canvas. Scrubbing at 60 pointer moves a second holds 60fps with a p95 frame of 16.9ms.
-Leaving the page mid-playback leaves zero animation callbacks outstanding.
-
-### Polish pass
-
-**Motion.** Routes cross-fade over 0.18s and Team sections fade up the first time they are scrolled
-to. The route fade is plain CSS: the shell lives in the entry chunk, so importing a motion runtime
-there put **26 kB gzipped in front of every first visit** — including game pages, which never used
-it — for one fade. Framer Motion stays where it earns its place, in the lazily loaded chunk the
-League and Team pages share. Both animations only ever add opacity: content is hittable within
-50ms of a navigation, well before the 180ms fade ends, and every section reaches full opacity
-whether or not the observer fires. `prefers-reduced-motion`
-removes all of it — sections render solid from their first frame, and the skeleton pulse resolves to
-`animation-name: none`. The projected-wins figure counts up like the stat bars already did, with the
-animated digits hidden from assistive technology and the settled value in an `sr-only` span, because
-mid-count-up the DOM reads a number that was never true.
-
-**States.** Each route now has a skeleton shaped like the page it precedes, and the shell picks the
-matching one for the chunk it is still downloading — otherwise a navigation showed a spinner for the
-chunk and then a different skeleton for the data, two waiting states for one click.
-
-**Text contrast.** Every distinct text style on every page was measured against its composited
-background — Tailwind v4 serialises colours as `oklch()`, so each one is painted into a canvas and
-read back rather than parsed. `text-neutral-600` came in at **2.46:1** and `text-neutral-500` at
-**4.05:1**, both under the 4.5:1 normal-size text owes. Both now resolve to one `--color-muted`
-token at 5.19:1 on a card, and the faintest tier separates itself by size and weight instead of by
-fading further. The canvas carried the same greys: its axis labels were 4.04:1 and the even-odds
-line 2.45:1, and both were lifted. Gridlines stay faint deliberately — they are scaffolding, and
-the value they would carry is written on the labels beside them. All 88 text styles across four
-pages now pass.
-
-**Accessibility.** The audit found three further defects. The League outline skipped h1 to h3, because
-the card headings had no level between them and the page title; the view summary is now the h2 it
-should always have been. An error page rendered its heading as an h2, leaving the document with no
-h1 at all — it replaces the page it was rendered for, so it owns the page heading. And twelve of the
-32 team colours drew bar fills below 3:1 against the neutral-800 track behind them, Buffalo's royal
-blue at **1.34:1**; `teamAccent` now tries the secondary colour before lightening the primary, so
-Pittsburgh keeps its gold rather than fading to grey.
-
-**Mobile.** At 320px the games list had squeezed opponents down to a single letter — "C…", "E…" —
-because the fixed columns left 18px for the name. Folding the home/away marker into the name line
-below `sm` returns 32px, and every opponent now renders in full with no clipping at 320, 360 and
-390px. No page scrolls horizontally at any of the four widths tested.
-
-## Decisions log
-
-- **TypeScript `strict` from day one** rather than as a later pass — retrofitting strictness across
-  an existing codebase costs more than writing under it from the start.
-- **oxlint over ESLint** — it is what `create-vite` now scaffolds by default; same role, faster.
-- **Tailwind v4 via the Vite plugin** — no `tailwind.config.js`; theme lives in CSS via `@theme`.
-- **`nflreadpy` instead of `nfl_data_py`** — the latter is deprecated upstream and pins
-  `pandas<2`/`numpy<2`, which have no Python 3.12 wheel, so it will not install on a current
-  interpreter.
-- **`projectedWins` is market-implied, not a Vegas over/under** — the nflverse win-totals dataset
-  was discontinued after 2020. Each game's closing spread is converted to a win probability and
-  summed across the regular season, which covers all six seasons instead of one.
-- **The canvas replay draws imperatively; React never re-renders per frame** — the animation loop
-  is an external system on the browser's frame clock, so its visible state reaches React through
-  `useSyncExternalStore` rather than being mirrored into `useState`.
-- **Data is validated, not assumed** — `etl/validate.py` checks all 1,693 games against the
-  TypeScript contract and caught four real defects (non-chronological `play_id`, timeout rows with
-  stale scores, playoff games inflating per-game rates, and a 2025 depth-chart schema change).
-
-## Data
-
-Six seasons, 2020-2025: **1,693 games and 273,325 plays**, plus a 32-team layer for the current
-season. 1,727 files, 76.9 MB, which packs to ~13 MB in git. A game file averages 46 KB raw but
-**6.6 KB gzipped**, so a replay loads on demand without a backend.
-
-`etl/validate.py` enforces the TypeScript contract on every generated file and is itself verified
-by fault injection. See [etl/README.md](etl/README.md) for the key-play rule, the missing-data
-decisions, and the dataset quirks worth knowing.
+[etl/README.md](etl/README.md) documents the key-play rule, the missing-data decisions, and the
+dataset quirks worth knowing before trusting a number.
 
 ## Attribution
 
-Data from [nflverse](https://github.com/nflverse), licensed
-[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Data from **[nflverse](https://github.com/nflverse)**, used under
+**[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)**. nflverse data is itself derived
+from NFL play-by-play sources; the win-probability model is nflfastR's.
+
+Team logos are served from ESPN's CDN, the URLs supplied by the nflverse teams dataset.
+
+This project is not affiliated with, endorsed by, or connected to the National Football League or
+any of its clubs. Team names, logos and colours are the property of their respective owners and
+appear here for identification only.
+
+## What I'd build next
+
+- **Compare two games, or two seasons, on one axis.** The chart already draws from a pure series;
+  a second series is mostly a legend and a colour decision.
+- **A drive-level layer over the play-level one.** The ETL already knows possession and scoring;
+  grouping plays into drives would let the replay skip forward a drive at a time, which is closer
+  to how people actually talk about a game.
+- **Search across all 1,693 games** — by team, week, margin, or "games that swung more than 60
+  points". The games index is 239 KB and already loaded; this is a filter, not a backend.
+- **Precompute the replay's per-play deltas in the ETL** so the client stops recomputing the
+  chart series on every mount. Currently 0.05 ms for a typical game, so this is a correctness-of-
+  ownership argument rather than a performance one.
+- **A shareable deep link into a moment** — `/game/<id>?play=142` — which the replay's single
+  cursor already makes almost free.
+- **Visual regression tests on the canvas.** The drawing code is pure and deterministic, so a
+  pixel snapshot per game archetype would catch what a recording context cannot.

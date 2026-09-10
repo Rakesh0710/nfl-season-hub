@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    // Tests read fixture files off disk, so they get the Node types the
+    // application deliberately does not: nothing in src/ outside these files
+    // is allowed to reach for `node:fs`.
+    "types": ["vite/client", "node"]
+  },
+  // The app config excludes these files; an inherited exclude would leave
+  // this project with no inputs at all.
+  "exclude": [],
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**/*.ts"]
+}

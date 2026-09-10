@@ -3,6 +3,7 @@
  * season's record, and the projected-win visualisation.
  */
 
+import { logoAt } from '@/lib/logos'
 import { BAR_TRACK, teamAccent, readableTextOn } from '@/lib/colors'
 import { recordLabel } from '@/lib/league'
 import ProjectedWins from '@/components/ProjectedWins'
@@ -16,7 +17,7 @@ export default function TeamHeader({ team }: { team: Team }) {
     <header className="grid gap-5 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-center">
       <div className="flex items-center gap-4">
         <img
-          src={team.logo}
+          src={logoAt(team.logo, 64)}
           alt=""
           width={64}
           height={64}

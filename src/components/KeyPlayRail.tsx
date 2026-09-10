@@ -62,14 +62,21 @@ export default function KeyPlayRail({
     if (event.detail === 0) return
     const rail = event.currentTarget.getBoundingClientRect()
     if (rail.width <= 0) return
-    event.stopPropagation()
     const wanted = ((event.clientX - rail.left) / rail.width) * lastIndex
     let nearest = 0
+    let shortest = Infinity
     keyIndices.forEach((index, position) => {
-      if (Math.abs(index - wanted) < Math.abs(keyIndices[nearest] - wanted)) nearest = position
+      const distance = Math.abs(index - wanted)
+      if (distance < shortest) {
+        shortest = distance
+        nearest = position
+      }
     })
+    const index = keyIndices[nearest]
+    if (index === undefined) return // a game with no key plays has no rail to aim at
+    event.stopPropagation()
     setFocused(nearest)
-    onSelect(keyIndices[nearest])
+    onSelect(index)
   }
 
   function onKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, position: number) {
@@ -94,6 +101,9 @@ export default function KeyPlayRail({
     >
       {keyIndices.map((index, position) => {
         const play = game.plays[index]
+        // A key index the plays array does not contain would be an ETL defect;
+        // skipping the marker loses one bead rather than the whole page.
+        if (!play) return null
         const current = index === currentIndex
         return (
           <button

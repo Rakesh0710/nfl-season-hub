@@ -142,7 +142,9 @@ export function describeView(view: LeagueView, shown: number, total: number): st
 const SORT_KEYS: readonly SortKey[] = ['projected', 'record', 'division']
 
 function isSortKey(value: string | null): value is SortKey {
-  return value !== null && (SORT_KEYS as readonly string[]).includes(value)
+  // `some` rather than `includes`, which would want its argument already
+  // narrowed to a SortKey and so would need the array widened by assertion.
+  return value !== null && SORT_KEYS.some((key) => key === value)
 }
 
 /**

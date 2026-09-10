@@ -28,7 +28,15 @@ export default function PlayContext({
   return (
     // A fixed floor, because descriptions run from four words to a full
     // sentence and a box that grows and shrinks makes the chart above it jump.
-    <div className="min-h-32 rounded-lg border border-neutral-800 bg-neutral-950/60 p-3 sm:min-h-28">
+    //
+    // The test id is here because this box has no role of its own and should
+    // not be given one: it is a passage of text that changes with the cursor,
+    // not a live region, and announcing it on every play would talk over the
+    // scrubber's own value. The end-to-end suite needs a stable handle on it.
+    <div
+      data-testid="play-context"
+      className="min-h-32 rounded-lg border border-neutral-800 bg-neutral-950/60 p-3 sm:min-h-28"
+    >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-xs text-neutral-400 tabular-nums">
           {periodLabel(play.quarter)} {clockLabel(play.clockSeconds)}

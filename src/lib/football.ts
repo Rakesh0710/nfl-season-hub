@@ -141,7 +141,7 @@ export function groupByPosition(players: readonly Player[]): [string, Player[]][
   }
   const known = ROSTER_POSITION_ORDER.filter((p) => groups.has(p))
   const unknown = [...groups.keys()].filter(
-    (p) => !(ROSTER_POSITION_ORDER as readonly string[]).includes(p),
+    (p) => !ROSTER_POSITION_ORDER.some((known) => known === p),
   )
   return [...known, ...unknown.sort()].map((key) => [
     key,
@@ -221,7 +221,8 @@ export function shortDate(iso: string): string {
  */
 export function teamNickname(name: string): string {
   const parts = name.trim().split(/\s+/)
-  return parts.length > 1 ? parts[parts.length - 1] : name
+  const nickname = parts.length > 1 ? parts.at(-1) : undefined
+  return nickname ?? name
 }
 
 /** "Week 12" -> "Wk 12"; postseason rounds keep a short name. */

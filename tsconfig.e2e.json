@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.e2e.tsbuildinfo",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "jsx": "preserve"
+  },
+  "exclude": [],
+  "include": ["e2e/**/*.ts", "playwright.config.ts"]
+}

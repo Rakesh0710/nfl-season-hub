@@ -10,6 +10,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ErrorState } from '@/components/States'
 import { GameSkeleton } from '@/components/Skeletons'
 import WinProbCanvas from '@/components/WinProbCanvas'
+import { logoAt } from '@/lib/logos'
 import { readableTextOn } from '@/lib/colors'
 import { shortDate, weekLabel } from '@/lib/football'
 import { getGame } from '@/lib/data'
@@ -86,7 +87,13 @@ function Side({
         mirrorOnDesktop ? 'sm:flex-row-reverse sm:text-right' : ''
       }`}
     >
-      <img src={team.logo} alt="" width={48} height={48} className="size-10 shrink-0 sm:size-12" />
+      <img
+        src={logoAt(team.logo, 48)}
+        alt=""
+        width={48}
+        height={48}
+        className="size-10 shrink-0 sm:size-12"
+      />
       <div className="min-w-0 flex-1">
         <span
           className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold"

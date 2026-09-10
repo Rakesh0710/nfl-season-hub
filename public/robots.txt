@@ -1,0 +1,6 @@
+# Everything here is public, generated data. Nothing to hold back.
+User-agent: *
+Allow: /
+
+# The generated JSON is the site's data layer, not content worth indexing.
+Disallow: /data/

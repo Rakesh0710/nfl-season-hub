@@ -27,3 +27,10 @@ dist-ssr
 etl/.venv/
 etl/__pycache__/
 .nflreadpy_cache/
+
+# Test output
+/coverage
+/playwright-report
+/test-results
+/blob-report
+/playwright/.cache

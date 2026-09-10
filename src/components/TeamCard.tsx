@@ -7,6 +7,7 @@
 
 import { m } from 'framer-motion'
 import { Link } from 'react-router-dom'
+import { logoAt } from '@/lib/logos'
 import { BAR_TRACK, teamAccent, readableTextOn } from '@/lib/colors'
 import { recordLabel } from '@/lib/league'
 import type { TeamSummary } from '@/types/nfl'
@@ -47,7 +48,7 @@ export default function TeamCard({ team }: { team: TeamSummary }) {
 
         <div className="flex items-center gap-3 pl-2">
           <img
-            src={team.logo}
+            src={logoAt(team.logo, 40)}
             alt=""
             width={40}
             height={40}

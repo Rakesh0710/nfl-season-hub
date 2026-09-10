@@ -3,6 +3,7 @@
  * section on the page and is never collapsed behind a tab.
  */
 
+import { logoAt } from '@/lib/logos'
 import { Link } from 'react-router-dom'
 import {
   recordFromGames,
@@ -73,7 +74,7 @@ export default function GamesList({
 
                 {opponent ? (
                   <img
-                    src={opponent.logo}
+                    src={logoAt(opponent.logo, 22)}
                     alt=""
                     width={22}
                     height={22}

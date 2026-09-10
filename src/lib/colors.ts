@@ -31,8 +31,8 @@ function parseHex(hex: string): [number, number, number] | null {
 export function relativeLuminance(hex: string): number {
   const rgb = parseHex(hex)
   if (!rgb) return 0
-  const [r, g, b] = rgb.map(channel)
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  const [r, g, b] = rgb
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
 }
 
 /** WCAG contrast ratio between two colors, 1 to 21. */

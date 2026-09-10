@@ -94,20 +94,46 @@ export function yForProb(prob: number, plot: Plot): number {
 }
 
 /**
+ * One play's win probability, or even odds when the index is outside the
+ * series.
+ *
+ * Every index below is derived from the series itself and clamped before use,
+ * so the fallback should never be reached; it keeps `noUncheckedIndexedAccess`
+ * honest in one place rather than at six call sites in the drawing path.
+ */
+function probOfPlay(points: readonly ChartPoint[], index: number): number {
+  return points[index]?.homeWinProb ?? 0.5
+}
+
+/**
+ * A cursor folded into the series.
+ *
+ * A non-finite cursor reads as the opening kickoff. Clamping alone does not
+ * remove a NaN — `Math.min(last, Math.max(0, NaN))` is still NaN — and it then
+ * travels into every coordinate, which the canvas skips without complaint: the
+ * curve simply disappears. Turning it into a position at the top is the only
+ * treatment that leaves something on screen.
+ */
+function clampCursor(cursor: number, lastIndex: number): number {
+  if (!Number.isFinite(cursor)) return 0
+  return Math.min(lastIndex, Math.max(0, cursor))
+}
+
+/**
  * Home win probability at a fractional play position.
  *
  * The cursor advances continuously while plays are discrete, so the tip of the
  * revealed line is interpolated between the play it has passed and the one it
  * is heading for. Without this the line would grow in visible steps.
  */
-export function probAt(points: ChartPoint[], cursor: number): number {
+export function probAt(points: readonly ChartPoint[], cursor: number): number {
   if (points.length === 0) return 0.5
   const lastIndex = points.length - 1
-  const at = Math.min(lastIndex, Math.max(0, cursor))
+  const at = clampCursor(cursor, lastIndex)
   const whole = Math.floor(at)
-  const here = points[whole].homeWinProb
+  const here = probOfPlay(points, whole)
   if (whole >= lastIndex) return here
-  return here + (points[whole + 1].homeWinProb - here) * (at - whole)
+  return here + (probOfPlay(points, whole + 1) - here) * (at - whole)
 }
 
 /** A whole-pixel coordinate for a 1px line, so it lands on one pixel instead of straddling two. */
@@ -202,16 +228,16 @@ function drawBackground(
 /** Trace the revealed part of the curve, ending at the interpolated cursor. */
 function tracePath(
   ctx: CanvasRenderingContext2D,
-  points: ChartPoint[],
+  points: readonly ChartPoint[],
   cursor: number,
   lastIndex: number,
   plot: Plot,
 ): void {
   const whole = Math.floor(cursor)
   ctx.beginPath()
-  ctx.moveTo(xForIndex(0, lastIndex, plot), yForProb(points[0].homeWinProb, plot))
+  ctx.moveTo(xForIndex(0, lastIndex, plot), yForProb(probOfPlay(points, 0), plot))
   for (let i = 1; i <= whole; i++) {
-    ctx.lineTo(xForIndex(i, lastIndex, plot), yForProb(points[i].homeWinProb, plot))
+    ctx.lineTo(xForIndex(i, lastIndex, plot), yForProb(probOfPlay(points, i), plot))
   }
   if (cursor > whole) {
     ctx.lineTo(xForIndex(cursor, lastIndex, plot), yForProb(probAt(points, cursor), plot))
@@ -221,7 +247,7 @@ function tracePath(
 /** The completed line segment, over a fill that fades toward the floor. */
 function drawCurve(
   ctx: CanvasRenderingContext2D,
-  points: ChartPoint[],
+  points: readonly ChartPoint[],
   cursor: number,
   lastIndex: number,
   plot: Plot,
@@ -257,7 +283,7 @@ function drawCurve(
  */
 function drawKeyPlays(
   ctx: CanvasRenderingContext2D,
-  points: ChartPoint[],
+  points: readonly ChartPoint[],
   keyIndices: readonly number[],
   cursor: number,
   lastIndex: number,
@@ -272,7 +298,7 @@ function drawKeyPlays(
     // Ascending, so the first one past the cursor ends the loop.
     if (index > cursor) break
     const x = xForIndex(index, lastIndex, plot)
-    const y = yForProb(points[index].homeWinProb, plot)
+    const y = yForProb(probOfPlay(points, index), plot)
     ctx.beginPath()
     ctx.arc(x, y, 3, 0, Math.PI * 2)
     ctx.fill()
@@ -284,13 +310,13 @@ function drawKeyPlays(
 /** The play under the pointer: a hairline and a hollow dot, drawn over everything. */
 function drawHover(
   ctx: CanvasRenderingContext2D,
-  points: ChartPoint[],
+  points: readonly ChartPoint[],
   index: number,
   lastIndex: number,
   plot: Plot,
 ): void {
   const x = xForIndex(index, lastIndex, plot)
-  const y = yForProb(points[index].homeWinProb, plot)
+  const y = yForProb(probOfPlay(points, index), plot)
   ctx.save()
   ctx.beginPath()
   ctx.setLineDash([2, 3])
@@ -342,7 +368,7 @@ function drawCursor(
 }
 
 export interface FrameOptions {
-  points: ChartPoint[]
+  points: readonly ChartPoint[]
   marks: { at: number; label: string }[]
   /** Fractional play index revealed so far, 0..points.length - 1. */
   cursor: number
@@ -360,7 +386,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, options: FrameOptions):
   const { points, marks, color, size } = options
   const plot = plotArea(size)
   const lastIndex = Math.max(0, points.length - 1)
-  const cursor = Math.min(lastIndex, Math.max(0, options.cursor))
+  const cursor = clampCursor(options.cursor, lastIndex)
 
   ctx.clearRect(0, 0, size.width, size.height)
   drawBackground(ctx, plot, marks, lastIndex)
