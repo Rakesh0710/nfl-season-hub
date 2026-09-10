@@ -76,7 +76,7 @@ etl/            Python ETL (own virtualenv)
 - [x] **Stage 2** — App shell & routing
 - [x] **Stage 3** — League dashboard
 - [x] **Stage 4** — Team page
-- [ ] **Stage 5** — Game replay engine (5A chart ✓, 5B canvas ✓, 5C transport ✓, 5D context ✓)
+- [x] **Stage 5** — Game replay engine
 - [ ] **Stage 6** — Polish & cross-cutting
 - [ ] **Stage 7** — Engineering credibility layer
 
@@ -234,10 +234,35 @@ offset comes from the event, so hovering never measures the DOM, and the hovered
 only when it changes to a different play. Measured while playing at 2x with the pointer sweeping the
 plot at 60 moves a second: **59.9fps unthrottled, 59.5fps with the CPU throttled 6x**.
 
-Recharts was the Stage 5A baseline and is no longer shipped. It survives as a development-only
-reference at `/game/<id>?baseline=1` under `npm run dev`, behind an `import.meta.env.DEV` branch
-that the production build eliminates along with the dependency: the game chunk went from
-**105 kB gzipped to 3.8 kB**.
+### Measured, not asserted
+
+Recharts was the Stage 5A baseline, used to validate the data before any animation was built on it.
+It has been removed now that the canvas engine is verified — one runtime dependency and 9.3 MB of
+`node_modules` gone. The shipped bundle is unchanged, because the dev-only branch guarding it had
+already kept it out: the game chunk dropped from **105 kB gzipped to 3.8 kB** when the canvas
+replaced it.
+
+Frame cadence is measured from the timestamps of the app's own draw calls, in headless Chrome with
+the GPU enabled — `--disable-gpu` forces software rasterisation and roughly doubles every canvas
+number. A 218-play game, playing at 1x:
+
+| CPU throttle | fps  | median frame | p95 frame | frames > 33ms | JS per frame |
+| ------------ | ---- | ------------ | --------- | ------------- | ------------ |
+| none         | 60.0 | 16.7ms       | 17.4ms    | 0             | 0.41ms       |
+| 4x           | 60.0 | 16.7ms       | 17.5ms    | 0             | 0.41ms       |
+| 6x           | 60.0 | 16.6ms       | 17.7ms    | 0             | 0.57ms       |
+| 10x          | 60.0 | 16.7ms       | 18.5ms    | 0             | 0.99ms       |
+| 20x          | 59.2 | 16.5ms       | 25.0ms    | 2             | 1.72ms       |
+
+Sixty holds to a tenfold CPU handicap, and a phone-sized canvas behaves the same. Every canvas call
+together costs **0.14ms of a 16.7ms frame**, of which the axis labels are 0.03ms — which is why the
+static background is redrawn every frame rather than cached to an offscreen bitmap. That
+optimisation was flagged as a candidate at two earlier checkpoints; profiling it showed the blit
+would cost more than the redraw, so it was not written.
+
+Resizing repaints exactly once per size change, and not at all when a viewport change does not
+alter the canvas. Scrubbing at 60 pointer moves a second holds 60fps with a p95 frame of 16.9ms.
+Leaving the page mid-playback leaves zero animation callbacks outstanding.
 
 ## Decisions log
 

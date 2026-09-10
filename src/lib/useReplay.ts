@@ -2,8 +2,8 @@
  * The replay clock.
  *
  * This hook owns the requestAnimationFrame loop that walks the play cursor
- * forward and repaints the canvas. The split it enforces is the point of the
- * whole stage:
+ * forward and repaints the canvas. The division of labour it enforces is the
+ * whole design:
  *
  *   - React owns the shell, the loaded game, the accent color, and the
  *     transport state a person can see and click.

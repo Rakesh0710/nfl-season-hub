@@ -1,9 +1,8 @@
 /**
  * Shaping a game's plays into a win-probability series.
  *
- * Kept out of the chart component so the same series feeds the Stage 5A
- * Recharts baseline and, later, the canvas replay — and so it can be checked
- * without rendering anything.
+ * Kept out of the drawing code so the series can be checked without rendering
+ * anything.
  */
 
 import { elapsedSeconds, type Game, type GamePlay } from '@/types/nfl'

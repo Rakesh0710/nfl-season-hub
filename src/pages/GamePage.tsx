@@ -1,13 +1,12 @@
 /**
  * The game page.
  *
- * The game's own JSON is fetched only when this route opens. Stage 5B replaced
- * the static Recharts line with the canvas replay, 5C added the transport, and
- * 5D the play context and key-play markers.
+ * A game's play-by-play is by far the largest file the site serves, so it is
+ * fetched here and nowhere else: neither the league dashboard nor a team page
+ * touches one.
  */
 
-import { lazy, Suspense } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { ErrorState, Loading } from '@/components/States'
 import WinProbCanvas from '@/components/WinProbCanvas'
 import { readableTextOn } from '@/lib/colors'
@@ -16,22 +15,8 @@ import { getGame } from '@/lib/data'
 import { useAsync } from '@/lib/useAsync'
 import type { Game, GameTeam } from '@/types/nfl'
 
-/**
- * The Stage 5A Recharts chart, kept as a development-only reference for
- * checking the canvas against a renderer already known to be correct:
- * `/game/<id>?baseline=1` under `npm run dev`.
- *
- * `import.meta.env.DEV` is a compile-time constant, so the production build
- * eliminates this branch — and with it the whole recharts dependency, which was
- * most of the game chunk.
- */
-const RechartsBaseline = import.meta.env.DEV
-  ? lazy(() => import('@/components/WinProbChart'))
-  : null
-
 export default function GamePage() {
   const { id = '' } = useParams<{ id: string }>()
-  const [params] = useSearchParams()
   const state = useAsync<Game>(`game/${id}`, () => getGame(id))
 
   if (state.status === 'loading') return <Loading label="Loading the game" />
@@ -75,15 +60,9 @@ export default function GamePage() {
 
       <WinProbCanvas game={game} />
 
-      {RechartsBaseline && params.get('baseline') === '1' && (
-        <Suspense fallback={null}>
-          <RechartsBaseline game={game} />
-        </Suspense>
-      )}
-
       <p className="text-xs text-neutral-500">
-        Stage 5D — canvas replay with transport, game context and key plays. The performance pass
-        arrives next.
+        Win probability from nflverse play-by-play. Scrub the timeline or select a key play to jump
+        to a moment.
       </p>
     </div>
   )
