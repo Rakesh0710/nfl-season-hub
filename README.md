@@ -74,7 +74,7 @@ etl/            Python ETL (own virtualenv)
 - [x] **Stage 0** — Foundations & setup
 - [x] **Stage 1** — Data layer (ETL)
 - [x] **Stage 2** — App shell & routing
-- [ ] **Stage 3** — League dashboard
+- [x] **Stage 3** — League dashboard
 - [ ] **Stage 4** — Team page
 - [ ] **Stage 5** — Game replay engine
 - [ ] **Stage 6** — Polish & cross-cutting
@@ -107,6 +107,22 @@ The file cannot carry comments — Vercel validates it with `additionalPropertie
 - **`stale-while-revalidate`, not `immutable`** — game files are not content-hashed and do change
   whenever the ETL is re-run, so `immutable` would strand visitors on stale data. Game files get a
   day of freshness and a week of stale-serving; the small index files get an hour.
+
+### League dashboard
+
+The view (sort, direction, conference, division) lives in the query string, so a filtered dashboard
+is shareable and survives a refresh. Unrecognised or contradictory values fall back to defaults
+rather than rendering an empty grid.
+
+Team colours are applied by measurement, not assumption. Six teams — New Orleans, Tennessee,
+Cincinnati, Cleveland, Miami and Carolina — fail WCAG AA with white text on their primary colour
+(New Orleans' gold manages 1.85:1), so [src/lib/colors.ts](src/lib/colors.ts) computes the
+foreground per team. Near-black primaries fall back to the secondary colour for the accent stripe,
+which would otherwise be invisible on a near-black page.
+
+Framer Motion is loaded through `LazyMotion` with only the `domAnimation` feature set, which cut
+the dashboard chunk from 42.2 KB to 29.0 KB gzipped. `strict` mode makes reaching for a heavier
+`motion.*` component a runtime error rather than a silent regression.
 
 ## Decisions log
 
