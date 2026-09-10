@@ -213,6 +213,16 @@ stop with the arrow keys walking it, rather than forty-one stops between the scr
 button. It sits below the track rather than on it, because markers laid over the scrubber would eat
 the drag area that is the scrubber's main job.
 
+Key plays cluster — a touchdown, its extra point and the following kickoff are consecutive plays —
+so markers sit a median of fifteen pixels apart on a desktop, and three on a phone, against a 24px
+hit area. Stacked hit boxes hand the click to whichever marker is later in the DOM: aiming at the
+centre of each of the forty-one markers in the densest game landed on a different play **nineteen
+times**. The rail therefore resolves a pointer click to the nearest marker itself, in the capture
+phase, leaving keyboard activation (which arrives with a click detail of 0) to the focused button.
+After the change, 168 of 168 aimed clicks land on the marker aimed at, at desktop and tablet widths.
+On a phone two markers one play apart fall about 1.4px from each other, closer than a pointer
+coordinate can address; the arrow keys reach every marker exactly.
+
 The context box is ordered by what a reader needs first: clock and score, then down, distance and
 possession, then the description, and only then win probability and EPA in the smallest, quietest
 type. Down and distance are dropped entirely when the play has none — 26,227 plays across the six

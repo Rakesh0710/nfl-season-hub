@@ -10,6 +10,15 @@
  * carries fifteen of these on average and up to forty-one, so the group is a
  * single tab stop and the arrow keys walk it, rather than forty-one stops
  * between the scrubber and the Play button.
+ *
+ * Key plays cluster — a touchdown, its extra point and the kickoff after it are
+ * consecutive — so in the densest game in the six seasons the markers sit a
+ * median of fifteen pixels apart on a desktop and three on a phone, well inside
+ * each other's comfortable hit area. Rather than shrink the targets to the
+ * width of a tick, the rail resolves a pointer click to the nearest marker
+ * itself. Stacked hit boxes would otherwise hand the click to whichever marker
+ * happened to be later in the DOM: aiming at the centre of each of forty-one
+ * markers landed on a different play nineteen times.
  */
 
 import { useRef, useState } from 'react'
@@ -41,6 +50,28 @@ export default function KeyPlayRail({
     rail.current?.querySelectorAll('button')[clamped]?.focus()
   }
 
+  /**
+   * A real pointer click anywhere on the rail selects the marker nearest to it.
+   *
+   * Taken in the capture phase so it settles the click before any overlapping
+   * marker can. Keyboard activation arrives here too — Enter on a focused
+   * button dispatches a click — but with a detail of 0, and that one is left
+   * alone so the focused marker is the one that acts.
+   */
+  function onRailClickCapture(event: React.MouseEvent<HTMLDivElement>) {
+    if (event.detail === 0) return
+    const rail = event.currentTarget.getBoundingClientRect()
+    if (rail.width <= 0) return
+    event.stopPropagation()
+    const wanted = ((event.clientX - rail.left) / rail.width) * lastIndex
+    let nearest = 0
+    keyIndices.forEach((index, position) => {
+      if (Math.abs(index - wanted) < Math.abs(keyIndices[nearest] - wanted)) nearest = position
+    })
+    setFocused(nearest)
+    onSelect(keyIndices[nearest])
+  }
+
   function onKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, position: number) {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
     if (event.key === 'Home' || event.key === 'End') {
@@ -59,6 +90,7 @@ export default function KeyPlayRail({
       role="group"
       aria-label={`Key plays: ${keyIndices.length} in this game`}
       className="relative h-6"
+      onClickCapture={onRailClickCapture}
     >
       {keyIndices.map((index, position) => {
         const play = game.plays[index]
