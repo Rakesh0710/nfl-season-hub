@@ -22,7 +22,11 @@ export function useCountUp(target: number, durationMs = 650): number {
     if (reduceMotion) return
     const start = performance.now()
     const tick = (now: number) => {
-      const elapsed = Math.min(1, (now - start) / durationMs)
+      // Clamped at both ends. requestAnimationFrame reports the frame's start
+      // time, which can predate the performance.now() captured above, and a
+      // negative fraction briefly rendered a negative figure - "-0.1" points
+      // per game - before the count-up climbed.
+      const elapsed = Math.max(0, Math.min(1, (now - start) / durationMs))
       setProgress(easeOut(elapsed))
       if (elapsed < 1) frame.current = requestAnimationFrame(tick)
     }
