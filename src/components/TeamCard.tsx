@@ -18,7 +18,14 @@ const SURFACE = '#0a0a0a' // neutral-950, the page background
 
 const cardVariants = {
   hidden: { opacity: 0, y: 8 },
-  visible: { opacity: 1, y: 0 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    // An explicit tween, not Framer's default spring: the spring overshoots
+    // its resting position, and 32 cards each bouncing reads as decoration
+    // rather than as the content simply arriving.
+    transition: { duration: 0.22, ease: 'easeOut' as const },
+  },
 }
 
 export default function TeamCard({ team }: { team: TeamSummary }) {
