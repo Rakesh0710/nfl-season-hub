@@ -15,8 +15,14 @@
 import { withAlpha } from '@/lib/colors'
 import type { ChartPoint } from '@/lib/winprob'
 
-/** Room around the plot for the axis labels, in CSS pixels. */
-const PAD = { top: 12, right: 14, bottom: 24, left: 40 }
+/**
+ * Room around the plot for the axis labels, in CSS pixels.
+ *
+ * Exported because the scrubber has to span exactly the plot, not the whole
+ * card: the thumb sits under the cursor line only if both use these insets.
+ */
+export const PLOT_PADDING = { top: 12, right: 14, bottom: 24, left: 40 }
+const PAD = PLOT_PADDING
 
 /**
  * Retina is worth paying for; a 3x phone screen is not. Backing-store pixels
@@ -98,27 +104,33 @@ function crisp(value: number): number {
 }
 
 /**
- * Match the backing store to the element's rendered size and the display's
- * pixel ratio, then scale the context so callers keep working in CSS pixels.
+ * Match the backing store to a CSS size and the display's pixel ratio, then
+ * scale the context so callers keep working in CSS pixels.
  *
- * Returns the CSS size, which is what every other function here expects.
- * Assigning to `canvas.width` clears the canvas, so it is guarded: this runs on
- * every frame and an unguarded assignment would wipe the drawing each time.
+ * The size is passed in rather than measured here. This runs on every frame,
+ * and reading `getBoundingClientRect()` from inside a frame forces a synchronous
+ * layout whenever anything has dirtied the DOM since the last one — which the
+ * scrubber does on every frame by writing its progress. Measuring in the
+ * ResizeObserver instead, which is handed the size it already computed, took
+ * forced layouts during playback from 60 a second to none.
+ *
+ * Assigning to `canvas.width` clears the canvas, so it is guarded: an
+ * unguarded assignment would wipe the drawing on every frame.
  */
-export function resizeCanvas(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D): Size {
+export function applyCanvasSize(
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  size: Size,
+): void {
   const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR)
-  const rect = canvas.getBoundingClientRect()
-  const width = Math.max(1, Math.round(rect.width))
-  const height = Math.max(1, Math.round(rect.height))
-  const backingWidth = Math.round(width * dpr)
-  const backingHeight = Math.round(height * dpr)
+  const backingWidth = Math.round(size.width * dpr)
+  const backingHeight = Math.round(size.height * dpr)
 
   if (canvas.width !== backingWidth || canvas.height !== backingHeight) {
     canvas.width = backingWidth
     canvas.height = backingHeight
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  return { width, height }
 }
 
 /** Grid, percentage labels, the even-odds line, and the quarter dividers. */

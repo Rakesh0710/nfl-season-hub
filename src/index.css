@@ -11,3 +11,61 @@ html {
 body {
   @apply bg-neutral-950 text-neutral-100 antialiased;
 }
+
+/*
+ * The replay scrubber.
+ *
+ * Styled rather than left native because the default track is a pale bar that
+ * reads as disabled on a dark surface. The filled portion is driven by a
+ * `--progress` custom property that the animation loop writes each frame, so
+ * the fill tracks the revealed curve without a React render. The thumb takes
+ * `currentColor`, which the component sets to the home team's accent.
+ */
+/* 36px tall for a comfortable touch target; only the middle 6px are visible.
+   WCAG 2.2 asks for 24, which a bare track would have met on its own. */
+.scrubber {
+  @apply h-9 w-full cursor-pointer appearance-none bg-transparent;
+}
+
+.scrubber::-webkit-slider-runnable-track {
+  @apply h-1.5 rounded-full;
+  background: linear-gradient(
+    to right,
+    currentColor 0 var(--progress, 0%),
+    var(--color-neutral-800) var(--progress, 0%) 100%
+  );
+}
+
+.scrubber::-moz-range-track {
+  @apply h-1.5 rounded-full;
+  background: linear-gradient(
+    to right,
+    currentColor 0 var(--progress, 0%),
+    var(--color-neutral-800) var(--progress, 0%) 100%
+  );
+}
+
+/* Centred on a 6px track: (6 - 16) / 2. */
+.scrubber::-webkit-slider-thumb {
+  @apply size-4 appearance-none rounded-full border-2 border-neutral-950;
+  margin-top: -5px;
+  background-color: currentColor;
+}
+
+.scrubber::-moz-range-thumb {
+  @apply size-4 rounded-full border-2 border-neutral-950;
+  background-color: currentColor;
+}
+
+/* The ring goes on the thumb, since the input itself is only a hit area. */
+.scrubber:focus-visible {
+  @apply outline-none;
+}
+
+.scrubber:focus-visible::-webkit-slider-thumb {
+  @apply ring-2 ring-emerald-400 ring-offset-2 ring-offset-neutral-950;
+}
+
+.scrubber:focus-visible::-moz-range-thumb {
+  @apply ring-2 ring-emerald-400 ring-offset-2 ring-offset-neutral-950;
+}

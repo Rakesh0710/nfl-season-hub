@@ -76,7 +76,7 @@ etl/            Python ETL (own virtualenv)
 - [x] **Stage 2** — App shell & routing
 - [x] **Stage 3** — League dashboard
 - [x] **Stage 4** — Team page
-- [ ] **Stage 5** — Game replay engine (5A static chart ✓, 5B canvas playback ✓)
+- [ ] **Stage 5** — Game replay engine (5A static chart ✓, 5B canvas playback ✓, 5C transport ✓)
 - [ ] **Stage 6** — Polish & cross-cutting
 - [ ] **Stage 7** — Engineering credibility layer
 
@@ -156,7 +156,8 @@ is the whole design:
 - `components/WinProbCanvas.tsx` is an ordinary React shell that never touches the canvas.
 
 Measured in Chrome: **60 canvas frames per second against 8 React renders per second** — 0.13
-renders per frame, one per play rather than one per frame.
+renders per frame, one per play rather than one per frame. Exactly one animation-frame callback is
+ever outstanding, verified under repeated play, pause, restart and game changes.
 
 The x axis is play order, not elapsed time. Several plays legitimately share one timestamp (a
 kickoff and the snap after it are both logged at 15:00), so a 174-play game has only 146 distinct
@@ -167,6 +168,31 @@ in a hidden tab, so the first frame back can carry minutes of wall time and woul
 the replay to the final whistle; capping the step means a backgrounded tab holds its place. Device
 pixel ratio is honoured but capped at 2 — backing-store pixels grow with its square, and a third
 multiple buys nothing visible on a two-pixel line.
+
+### Transport
+
+There is exactly one playback position: a fractional play index in a ref. The canvas, the scrubber
+thumb, the track fill and the readout all render from that one value, so they cannot disagree —
+sampled 30 times during playback, the readout and the scrubber never diverged. Nothing derives
+position from a frame count either, so a dropped frame slows the replay rather than pushing it out
+of step.
+
+The scrubber is a native `<input type="range">`: role, drag, and value announcement come for free.
+Two things are added on top. Its track is continuous so the thumb can follow the cursor smoothly,
+which would otherwise leave the browser moving by a hundredth of the game per arrow press, so the
+arrow keys are handled explicitly — one play each, ten for page keys, Home and End for the
+whistles. And `aria-valuetext` carries the period, clock, score and probability, because a bare
+play index tells a screen-reader user nothing about where they are.
+
+Seeking never changes whether the replay is running: paused stays paused, playing carries on from
+the new position. A pointer drag is the exception — playback is suspended while the thumb is held,
+because otherwise the target moves out from under it, and resumes on release.
+
+Syncing the thumb every frame is the most expensive thing outside the canvas. Measured by neutering
+each write in turn on one build: moving the thumb costs about 10ms of layout per second, and
+refilling the track about 17ms of style recalculation. Skipping writes finer than a thousandth of
+the track — under a pixel at any width this control gets — cut both by roughly a third, to 39
+layouts and 37 style recalculations a second, with no visible change to the thumb.
 
 Recharts was the Stage 5A baseline and is no longer shipped. It survives as a development-only
 reference at `/game/<id>?baseline=1` under `npm run dev`, behind an `import.meta.env.DEV` branch

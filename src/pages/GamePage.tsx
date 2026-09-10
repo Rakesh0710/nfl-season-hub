@@ -1,9 +1,9 @@
 /**
  * The game page.
  *
- * The game's own JSON is fetched only when this route opens. Stage 5B replaces
- * the static Recharts line with the canvas replay; the scrubber and key-play
- * markers arrive in 5C and 5D.
+ * The game's own JSON is fetched only when this route opens. Stage 5B replaced
+ * the static Recharts line with the canvas replay and 5C added the transport;
+ * key-play markers arrive in 5D.
  */
 
 import { lazy, Suspense } from 'react'
@@ -82,8 +82,8 @@ export default function GamePage() {
       )}
 
       <p className="text-xs text-neutral-500">
-        Stage 5B — canvas replay. Scrubbing, key-play markers and the performance pass arrive in the
-        next steps.
+        Stage 5C — canvas replay with transport. Key-play markers and the performance pass arrive in
+        the next steps.
       </p>
     </div>
   )
