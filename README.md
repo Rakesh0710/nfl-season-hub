@@ -395,27 +395,45 @@ headless Chrome, desktop preset and the default mobile preset (4× CPU throttlin
 4G). Machine benchmark index 3057. Lighthouse is not a dependency of this project — it is run
 with `npx` when a measurement is wanted, so nobody pays 21 MB of install for a number.
 
-| Page    | Form    | Perf | A11y | Best practices | SEO | FCP   | LCP   | TBT   | CLS   | Page weight |
-| ------- | ------- | ---: | ---: | -------------: | --: | ----- | ----- | ----- | ----- | ----------: |
-| League  | desktop |  100 |  100 |            100 | 100 | 0.3 s | 0.4 s | 0 ms  | 0.046 |     265 KiB |
-| Team    | desktop |   99 |  100 |            100 | 100 | 0.4 s | 0.5 s | 0 ms  | 0.069 |     171 KiB |
-| Game    | desktop |  100 |  100 |            100 | 100 | 0.3 s | 0.3 s | 0 ms  | 0.005 |     124 KiB |
-| League  | mobile  |  100 |  100 |            100 | 100 | 1.2 s | 1.4 s | 0 ms  | 0     |     222 KiB |
-| Team    | mobile  |  100 |  100 |            100 | 100 | 1.3 s | 1.7 s | 20 ms | 0     |     171 KiB |
-| Game    | mobile  |  100 |  100 |            100 | 100 | 1.2 s | 1.2 s | 0 ms  | 0.033 |     124 KiB |
-| Compare | desktop |  100 |  100 |            100 | 100 | 0.4 s | 0.4 s | 0 ms  | 0     |     150 KiB |
-| Compare | mobile  |   96 |  100 |            100 | 100 | 1.4 s | 2.3 s | 0 ms  | 0     |     150 KiB |
+**Three runs per row.** Scores are the median and the spread is printed, because a single mobile
+run is not a measurement: the same route came back 93 and 99 twenty seconds apart. An earlier
+version of this table was single runs and claimed repeats moved "by at most one point", which
+thirty runs did not bear out.
 
-A loaded comparison is the slowest route on mobile — 96, LCP 2.3 s — because it is the only page
-that fetches the 27 KiB game index, and it does so to show six seasons of head-to-head rather than
-the two meetings a team file could supply. That is the trade named when the feature was scoped,
-and it is worth it. Its layout shift is 0, the best in the app, because its skeleton is sized from
-the real thing rather than sketched.
+| Page    | Form    |         Perf | A11y | Best practices | SEO |   FCP |           LCP |   TBT | CLS | Page weight |
+| ------- | ------- | -----------: | ---: | -------------: | --: | ----: | ------------: | ----: | --: | ----------: |
+| League  | desktop |          100 |  100 |            100 | 100 | 0.4 s |         0.5 s |  0 ms |   0 |     274 KiB |
+| Team    | desktop |          100 |  100 |            100 | 100 | 0.3 s |         0.4 s |  0 ms |   0 |     178 KiB |
+| Game    | desktop |          100 |  100 |            100 | 100 | 0.4 s |         0.4 s |  0 ms |   0 |     132 KiB |
+| Compare | desktop |          100 |  100 |            100 | 100 | 0.4 s |         0.4 s |  0 ms |   0 |     155 KiB |
+| Players | desktop |          100 |  100 |            100 | 100 | 0.4 s |         0.4 s |  0 ms |   0 |     307 KiB |
+| League  | mobile  | 100 (96–100) |  100 |            100 | 100 | 1.3 s | 1.8 s (± 0.5) |  1 ms |   0 |     225 KiB |
+| Team    | mobile  |   96 (96–97) |  100 |            100 | 100 | 1.5 s | 2.1 s (± 0.1) | 40 ms |   0 |     178 KiB |
+| Game    | mobile  |  99 (97–100) |  100 |            100 | 100 | 1.4 s | 1.6 s (± 0.2) | 18 ms |   0 |     132 KiB |
+| Compare | mobile  |   97 (93–99) |  100 |            100 | 100 | 1.4 s | 1.8 s (± 1.2) |  0 ms |   0 |     155 KiB |
+| Players | mobile  |   95 (92–96) |  100 |            100 | 100 | 1.4 s | 2.4 s (± 0.4) | 10 ms |   0 |     287 KiB |
 
-The same build measured on `vite preview` over localhost scores one to two points lower on mobile
-(FCP 1.6 s rather than 1.2 s): the CDN's brotli and HTTP/2 are doing real work, and a local
-preview is the pessimistic reading rather than the flattering one. These are single runs — across
-repeats the scores moved by at most one point and LCP by up to 0.3 s. Reproduce either with:
+**Desktop is 100 on every route, in all fifteen runs.** So is accessibility, best practices and
+SEO, on every run of both forms.
+
+**Layout shift is 0 everywhere**, and getting there took two fixes that are worth naming because
+both were self-inflicted. The app shell is `min-h-dvh flex flex-col`, so while a skeleton is up
+the page is exactly one viewport tall and the footer sits visible at the bottom of it; when the
+real content lands — 2,009 px for the dashboard — the footer is pushed off, and that displacement
+was most of the measured shift. Skeletons now reserve 120vh, which every route in this app
+overruns anyway. The second was the dashboard's coverage note arriving a frame after the
+standings and pushing 50 px of content down; the three files it needs now settle together, with
+the freshness file allowed to fail. Delaying `meta.json` by two seconds against the production
+build now produces 0.0000.
+
+**`/players` is the heaviest page and the slowest on mobile** — 287 KiB, LCP 2.4 s — because it
+carries the 73 KiB search index and sixty headshots. It is the price of a list you scan by face
+rather than by name, and dropping the thumbnails would be a one-line change if it stopped being
+worth it.
+
+The same build measured on `vite preview` over localhost scores lower on mobile: the CDN's brotli
+and HTTP/2 are doing real work, so a local preview is the pessimistic reading rather than the
+flattering one. Reproduce either with:
 
 ```bash
 npx lighthouse https://nfl-season-hub.vercel.app/ --preset=desktop --view
@@ -483,12 +501,15 @@ assert the type of.
 
 - **`unused-javascript`, 36 KiB.** React and Router code not executed during first paint. Real,
   but not separable without shipping a different framework.
-- **CLS 0.069 on the team page.** The only element that moves is the footer: while the skeleton is
-  showing, the page is exactly one viewport tall, so the footer is on screen; when 5,542px of team
-  page arrives, it moves below the fold. Both figures are inside Google's "good" threshold (<0.1),
-  and closing the gap would mean the skeleton knowing the size of the data it is waiting for.
-  Padding the skeleton until the footer starts off-screen would improve the metric and not the
-  experience.
+- **The footer shift — reversed, having argued the other way.** This entry used to say the
+  team page's CLS of 0.069 was the footer moving below the fold, that the figure was inside
+  Google's "good" threshold, and that "padding the skeleton until the footer starts off-screen
+  would improve the metric and not the experience". I no longer think that is right. Reserving
+  120vh is not padding to move a number: every route in this app loads to more than one screen,
+  so the space is genuinely going to be used, which is the whole job of a skeleton. And the
+  argument was doing double duty as an excuse — it sat next to a second, unambiguous shift where
+  the dashboard's coverage note pushed the tabs, the controls and the grid down 50 px, which no
+  threshold excuses. CLS is now 0 on every route and form.
 - **Third-party cache headers, ~48 KiB.** The logos are served by ESPN's CDN with their cache
   policy, not ours.
 
@@ -497,8 +518,8 @@ assert the type of.
 ## Accessibility
 
 The audit was run with the keyboard only, and the numbers came from the rendered page rather than
-from reading the CSS. Lighthouse scores accessibility **100 on all three pages**, on both form
-factors — but Lighthouse's automated checks are a floor, not the audit. The rest of this was found
+from reading the CSS. Lighthouse scores accessibility **100 on all five routes**, on both form
+factors, in all thirty runs — but Lighthouse's automated checks are a floor, not the audit. The rest of this was found
 by hand:
 
 - **Every control is reachable and every stop is visible.** League 44 tab stops, Team 30, and the
