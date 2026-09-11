@@ -1,6 +1,11 @@
 /**
- * Projected wins on a 0-17 scale, with last season's actual wins marked for
- * comparison.
+ * Expected wins on a 0-17 scale, with the season's actual wins marked beside
+ * them.
+ *
+ * Expected wins is market-implied: each game's closing spread turned into a
+ * win probability and summed. Read against what happened it is an
+ * over/underperformance figure, which is the more interesting reading of the
+ * two and the only one available for a season already played.
  *
  * Every value is printed as well as plotted, and the markers are positioned
  * with CSS rather than by animation, so the whole thing is readable from the
@@ -10,45 +15,44 @@
 import { m, useReducedMotion } from 'framer-motion'
 import { num } from '@/lib/football'
 import { useCountUp } from '@/lib/useCountUp'
-import type { TeamRecord } from '@/types/nfl'
 
 const MAX_WINS = 17
 
 export default function ProjectedWins({
-  projected,
-  lastSeason,
+  expected,
+  actual,
   color,
 }: {
-  projected: number
-  lastSeason: TeamRecord
+  expected: number
+  actual: number
   color: string
 }) {
   const reduceMotion = useReducedMotion()
-  const known = Number.isFinite(projected)
-  const animated = useCountUp(known ? projected : 0)
+  const known = Number.isFinite(expected)
+  const animated = useCountUp(known ? expected : 0)
   const pct = (v: number) => (Math.max(0, Math.min(MAX_WINS, v)) / MAX_WINS) * 100
-  const actual = lastSeason.wins
-  const delta = known ? projected - actual : null
+  // Positive means the season beat what the market priced it at.
+  const delta = known ? actual - expected : null
 
   return (
     <section
-      aria-label="Projected wins"
+      aria-label="Expected wins"
       className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="text-[11px] font-semibold tracking-widest text-muted uppercase">
-          Projected wins
+          Expected wins
         </h2>
         <p className="text-sm text-neutral-400">
           {/* The same split StatBar uses: the animated digits are hidden from
               assistive technology, which is handed the settled figure, because
               mid-count-up the DOM reads a number that was never true. */}
           <span className="text-2xl font-bold text-neutral-100 tabular-nums">
-            <span aria-hidden="true">{known ? num(animated, 1) : num(projected, 1)}</span>
-            <span className="sr-only">{num(projected, 1)}</span>
+            <span aria-hidden="true">{known ? num(animated, 1) : num(expected, 1)}</span>
+            <span className="sr-only">{num(expected, 1)}</span>
           </span>
           <span className="ml-2">
-            vs {actual} actual
+            vs {actual} won
             {delta !== null && (
               <span className={delta >= 0 ? 'text-emerald-400' : 'text-amber-400'}>
                 {' '}
@@ -66,13 +70,13 @@ export default function ProjectedWins({
           <m.div
             className="absolute top-1/2 left-0 h-2 -translate-y-1/2 rounded-full"
             style={{ backgroundColor: color }}
-            initial={{ width: reduceMotion ? `${pct(projected)}%` : 0 }}
-            animate={{ width: `${pct(projected)}%` }}
+            initial={{ width: reduceMotion ? `${pct(expected)}%` : 0 }}
+            animate={{ width: `${pct(expected)}%` }}
             transition={{ duration: reduceMotion ? 0 : 0.6, ease: 'easeOut' }}
           />
         )}
 
-        {/* Last season's actual wins, as a tick the projection is read against. */}
+        {/* What they actually won, as a tick the expectation is read against. */}
         <div
           className="absolute top-1/2 h-5 w-0.5 -translate-x-1/2 -translate-y-1/2 bg-neutral-300"
           style={{ left: `${pct(actual)}%` }}
@@ -82,7 +86,7 @@ export default function ProjectedWins({
           className="absolute top-full mt-1 -translate-x-1/2 text-[10px] whitespace-nowrap text-neutral-400 tabular-nums"
           style={{ left: `${pct(actual)}%` }}
         >
-          {actual} last yr
+          {actual} won
         </span>
       </div>
 

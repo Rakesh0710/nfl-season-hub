@@ -9,6 +9,11 @@
  * The grid is `items-start`: without it a one-player group such as Kickers is
  * stretched to the height of the tallest group in its row, leaving a card of
  * dead space.
+ *
+ * A name is a link only when there is a page behind it, and on an older season
+ * most are not: the player layer follows the current roster, so a 2020 squad is
+ * mostly players who have since left the league. The count below says how many
+ * lead somewhere rather than leaving a reader to discover it by clicking.
  */
 
 import { useMemo, useState } from 'react'
@@ -16,10 +21,16 @@ import { groupByPosition, isActive, POSITION_GROUP_LABELS } from '@/lib/football
 import PlayerChip from '@/components/PlayerChip'
 import type { Player } from '@/types/nfl'
 
+/** How many of the names currently on screen lead to a player page. */
+function shownLinked(players: readonly Player[], activeOnly: boolean): number {
+  return players.filter((p) => p.hasProfile && (!activeOnly || isActive(p))).length
+}
+
 export default function Roster({ players }: { players: readonly Player[] }) {
   const [activeOnly, setActiveOnly] = useState(true)
 
   const activeCount = useMemo(() => players.filter(isActive).length, [players])
+  const linked = useMemo(() => shownLinked(players, activeOnly), [players, activeOnly])
   const shown = useMemo(
     () => (activeOnly ? players.filter(isActive) : players),
     [players, activeOnly],
@@ -36,6 +47,9 @@ export default function Roster({ players }: { players: readonly Player[] }) {
         <p className="text-sm text-neutral-400">
           {shown.length} of {players.length} players
         </p>
+        {linked > 0 && linked < shown.length && (
+          <p className="text-xs text-muted">{linked} with a page</p>
+        )}
         <div className="flex gap-1 rounded-lg border border-neutral-800 p-1">
           {[
             { label: `Active (${activeCount})`, value: true },

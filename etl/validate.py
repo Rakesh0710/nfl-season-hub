@@ -40,9 +40,22 @@ TEAM_SUMMARY = {
     "secondaryColor": (str, True), "lastSeason": (dict, True),
     "projectedWins": (float, True),
 }
-TEAM = TEAM_SUMMARY | {
+# team/<season>/<ID>.json. Deliberately not TEAM_SUMMARY plus extras: the
+# per-season file answers "how did this year go" (record, expectedWins) where
+# the index answers "who are these teams now" (lastSeason, projectedWins).
+TEAM_SEASON = {
+    "id": (str, True), "name": (str, True), "conference": (str, True),
+    "division": (str, True), "logo": (str, True), "primaryColor": (str, True),
+    "secondaryColor": (str, True), "season": (int, True), "record": (dict, True),
+    "expectedWins": (float, True),
     "roster": (list, True), "depthChart": (dict, True), "draftClass": (list, True),
     "stats": (dict, True), "games": (list, True),
+}
+TEAM_RECORD = {"wins": (int, True), "losses": (int, True), "ties": (int, True)}
+SEASON_RECORD = {
+    "season": (int, True), "team": (str, True), "wins": (int, True),
+    "losses": (int, True), "ties": (int, True), "pointsFor": (int, True),
+    "pointsAgainst": (int, True), "expectedWins": (float, True),
 }
 # A headshot the frontend cannot resize is a headshot served at its stored size,
 # and the stored sizes are 3-6 MB PNGs. `headshotAt` in src/lib/logos.ts appends
@@ -181,15 +194,22 @@ def check_contract_drift(types_file: Path) -> None:
         if not m:
             return None
         found = {}
+        depth = 0
         for line in m.group(1).splitlines():
             line = re.sub(r"//.*", "", line).strip()
-            f = re.match(r"(\w+)(\??):", line)
-            if f:
-                found[f.group(1)] = f.group(2) == ""
+            # Only fields of the interface itself. Without the depth count,
+            # `stats: { offense: ...; defense: ... }` reported offense and
+            # defense as top-level fields the validator was missing.
+            if depth == 0:
+                f = re.match(r"(\w+)(\??):", line)
+                if f:
+                    found[f.group(1)] = f.group(2) == ""
+            depth += line.count("{") - line.count("}")
         return found
 
     for iface, schema in (
-        ("TeamSummary", TEAM_SUMMARY), ("Player", PLAYER), ("DraftPick", DRAFT_PICK),
+        ("TeamSummary", TEAM_SUMMARY), ("TeamSeason", TEAM_SEASON),
+        ("SeasonRecord", SEASON_RECORD), ("Player", PLAYER), ("DraftPick", DRAFT_PICK),
         ("TeamStatLine", STAT_LINE), ("GameSummary", GAME_SUMMARY),
         ("GamePlay", PLAY), ("GameTeam", GAME_TEAM), ("Game", GAME),
     ):
@@ -263,7 +283,7 @@ def main() -> int:
         check_shape("meta", meta, {
             "generatedAt": (str, True), "source": (str, True),
             "displaySeason": (int, True), "latestSeason": (int, True),
-            "seasons": (list, True),
+            "teamSeasons": (list, True), "seasons": (list, True),
         })
         try:
             datetime.fromisoformat(str(meta.get("generatedAt", "")).replace("Z", "+00:00"))
@@ -296,6 +316,25 @@ def main() -> int:
                 fail("meta.latestSeason is not the newest season listed")
             if isinstance(display, int) and display > meta["latestSeason"]:
                 fail("meta.displaySeason is newer than meta.latestSeason")
+
+        # The seasons the league and team pages are allowed to offer. Every one
+        # must be a season the dataset knows about, the list must be ordered,
+        # and the season actually displayed must be among them — a dashboard
+        # pointed at a season with no team layer behind it would 404 on every
+        # card.
+        team_seasons = meta.get("teamSeasons", [])
+        if not isinstance(team_seasons, list) or not team_seasons:
+            fail("meta.teamSeasons: expected a non-empty array")
+        else:
+            if team_seasons != sorted(team_seasons):
+                fail("meta.teamSeasons is not in ascending order")
+            if len(set(team_seasons)) != len(team_seasons):
+                fail("meta.teamSeasons repeats a season")
+            for season in team_seasons:
+                if season not in meta_seasons:
+                    fail(f"meta.teamSeasons lists {season!r}, which meta.seasons does not")
+            if display not in team_seasons:
+                fail(f"meta.displaySeason {display!r} has no team layer in meta.teamSeasons")
 
     # ---------- games-index ----------
     games_index = load(data / "games-index.json")
@@ -399,17 +438,79 @@ def main() -> int:
                 f"actual {game['away']['finalScore']}-{game['home']['finalScore']}"
             )
 
+    # ---------- standings ----------
+    # One row per team per season with a team layer. The dashboard reads a
+    # season out of this without a fetch, so a missing row is a missing card.
+    standings = load(data / "standings.json")
+    standings_pairs: set[tuple[int, str]] = set()
+    if not isinstance(standings, list):
+        fail("standings.json: expected an array")
+    else:
+        for row in standings:
+            where = f"standings[{row.get('season')}/{row.get('team')}]"
+            check_shape(where, row, SEASON_RECORD)
+            season, team_id = row.get("season"), row.get("team")
+            if (season, team_id) in standings_pairs:
+                fail(f"{where}: duplicated")
+            standings_pairs.add((season, team_id))
+            if team_id not in team_ids:
+                fail(f"{where}: {team_id!r} is not a known team")
+            if season not in team_seasons:
+                fail(f"{where}: {season!r} has no team layer, so nothing can show this row")
+            played = sum(row.get(k, 0) for k in ("wins", "losses", "ties"))
+            if not 1 <= played <= 17:
+                fail(f"{where}: {played} regular-season games is not a season")
+            xw = row.get("expectedWins")
+            if isinstance(xw, (int, float)) and not 0 <= xw <= 17:
+                fail(f"{where}: expectedWins {xw} outside 0..17")
+
+    for season in team_seasons:
+        missing = {t for t in team_ids if (season, t) not in standings_pairs}
+        if missing:
+            fail(
+                f"standings.json: {season} is missing {len(missing)} team(s) "
+                f"({', '.join(sorted(missing)[:6])}) that have a team layer"
+            )
+
     # ---------- team files ----------
-    team_files = sorted((data / "team").glob("*.json"))
-    if len(team_files) != 32:
-        fail(f"team/: {len(team_files)} files, expected exactly 32")
+    # One directory per season, one file per team. The season directories must
+    # be exactly the ones meta advertises: a directory nothing links to is dead
+    # weight served to anyone who keeps the URL, and a missing one is a season
+    # the dashboard offers and cannot open.
+    season_dirs = sorted(d for d in (data / "team").glob("*") if d.is_dir())
+    found_seasons = sorted(int(d.name) for d in season_dirs if d.name.isdigit())
+    if found_seasons != sorted(team_seasons):
+        fail(
+            f"team/: season directories {found_seasons} do not match "
+            f"meta.teamSeasons {sorted(team_seasons)}"
+        )
+    for stray in (data / "team").glob("*.json"):
+        fail(f"team/{stray.name}: a flat team file predating the per-season layer")
+
+    team_files = sorted((data / "team").glob("*/*.json"))
+    for season_dir in season_dirs:
+        count = len(list(season_dir.glob("*.json")))
+        if count != 32:
+            fail(f"team/{season_dir.name}/: {count} files, expected exactly 32")
 
     for tf in team_files:
         team = load(tf)
-        where = f"team/{tf.stem}"
-        check_shape(where, team, TEAM)
+        where = f"team/{tf.parent.name}/{tf.stem}"
+        check_shape(where, team, TEAM_SEASON)
         if team.get("id") != tf.stem:
             fail(f"{where}: id {team.get('id')!r} disagrees with its filename")
+        if str(team.get("season")) != tf.parent.name:
+            fail(f"{where}: season {team.get('season')!r} disagrees with its directory")
+        check_shape(f"{where} record", team.get("record", {}), TEAM_RECORD)
+        row = next(
+            (r for r in standings if r.get("season") == team.get("season")
+             and r.get("team") == team.get("id")),
+            None,
+        )
+        if row is not None and team.get("record") != {
+            "wins": row["wins"], "losses": row["losses"], "ties": row["ties"]
+        }:
+            fail(f"{where}: record disagrees with standings.json")
 
         for p in team.get("roster", []):
             check_shape(f"{where} roster[{p.get('id')}]", p, PLAYER)
@@ -447,6 +548,11 @@ def main() -> int:
                 fail(f"{where}: game {g.get('gameId')!r} has no generated game file")
             if tf.stem not in (g.get("home"), g.get("away")):
                 fail(f"{where}: game {g.get('gameId')!r} does not involve this team")
+            if g.get("season") != team.get("season"):
+                fail(
+                    f"{where}: game {g.get('gameId')!r} is from {g.get('season')}, "
+                    f"not {team.get('season')}"
+                )
 
     # ---------- players index ----------
     players_index = load(data / "players-index.json")
@@ -529,8 +635,10 @@ def main() -> int:
         return 1
 
     print(
-        f"\nOK — 32 teams, {len(game_files)} games, {len(games_index)} indexed, "
-        f"{len(player_files)} players, {len(index_ids)} indexed. "
+        f"\nOK — 32 teams over {len(found_seasons)} seasons ({len(team_files)} team files), "
+        f"{len(game_files)} games, {len(games_index)} indexed, "
+        f"{len(player_files)} players, {len(index_ids)} indexed, "
+        f"{len(standings_pairs)} standings rows. "
         "All checks pass; data matches the TypeScript contract."
     )
     return 0

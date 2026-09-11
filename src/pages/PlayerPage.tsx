@@ -12,9 +12,10 @@
  * in 2025, and both show.
  */
 
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { PlayerSkeleton } from '@/components/Skeletons'
 import { ErrorState } from '@/components/States'
+import SeasonTabs from '@/components/SeasonTabs'
 import WeeklyTrend from '@/components/WeeklyTrend'
 import { BAR_TRACK, teamAccent } from '@/lib/colors'
 import { getMeta, getPlayer, getTeamsIndex } from '@/lib/data'
@@ -28,6 +29,7 @@ type PlayerPageData = { player: PlayerProfile; team: TeamSummary | undefined }
 
 export default function PlayerPage() {
   const { id = '' } = useParams<{ id: string }>()
+  const [params, setParams] = useSearchParams()
   const meta = useAsync<Meta>('meta', getMeta)
   const state = useAsync<PlayerPageData>(`player/${id}`, async () => {
     // The index is already cached if they arrived from a team page, and it
@@ -42,8 +44,24 @@ export default function PlayerPage() {
   const { player, team } = state.data
   const accent = team ? teamAccent(BAR_TRACK, team.primaryColor, team.secondaryColor) : '#a3a3a3'
   const displaySeason = meta.status === 'success' ? meta.data.displaySeason : undefined
-  const current = player.seasons.find((s) => s.season === displaySeason) ?? player.seasons.at(-1)
-  const chart = primaryGroup(player.weeks)
+
+  /**
+   * One season governs the stat groups and the weekly chart together.
+   *
+   * The file carries every season's weeks — a hundred bars for a six-season
+   * career — so they have to be cut somewhere, and cutting them by the same
+   * season the stat block above describes is the only cut that leaves the two
+   * agreeing with each other. The career table below deliberately stays whole:
+   * that is the section whose job is the long view.
+   */
+  const asked = Number(params.get('season'))
+  const seasons = player.seasons.map((s) => s.season)
+  const current =
+    player.seasons.find((s) => s.season === asked) ??
+    player.seasons.find((s) => s.season === displaySeason) ??
+    player.seasons.at(-1)
+  const weeks = player.weeks.filter((w) => w.season === current?.season)
+  const chart = primaryGroup(weeks)
 
   return (
     <div className="space-y-8">
@@ -61,6 +79,15 @@ export default function PlayerPage() {
 
       <Identity player={player} team={team} accent={accent} />
 
+      {seasons.length > 1 && (
+        <SeasonTabs
+          seasons={[...seasons].reverse()}
+          value={current?.season ?? null}
+          onChange={(next) => setParams({ season: String(next) }, { replace: true })}
+          label={`${player.name} season`}
+        />
+      )}
+
       {current && (
         <section aria-labelledby="season-heading">
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -75,12 +102,12 @@ export default function PlayerPage() {
         </section>
       )}
 
-      {chart && player.weeks.length > 1 && (
+      {chart && weeks.length > 1 && (
         <section aria-labelledby="trend-heading">
           <h2 id="trend-heading" className="mb-3 text-lg font-bold tracking-tight">
             Week by week
           </h2>
-          <WeeklyTrend weeks={player.weeks} group={chart} color={accent} />
+          <WeeklyTrend weeks={weeks} group={chart} color={accent} />
         </section>
       )}
 

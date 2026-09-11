@@ -13,8 +13,11 @@ import type {
   Game,
   GamePlay,
   GameSummary,
+  Meta,
   Player,
-  Team,
+  SeasonRecord,
+  TeamSeason,
+  TeamSeasonView,
   TeamStatLine,
   TeamSummary,
 } from '@/types/nfl'
@@ -197,9 +200,19 @@ function makeStatLine(over: Partial<TeamStatLine> = {}): TeamStatLine {
   }
 }
 
-export function makeTeam(over: Partial<Team> = {}): Team {
+export function makeTeamSeason(over: Partial<TeamSeason> = {}): TeamSeason {
+  const { id, name, conference, division, logo, primaryColor, secondaryColor } = makeTeamSummary()
   return {
-    ...makeTeamSummary(),
+    id,
+    name,
+    conference,
+    division,
+    logo,
+    primaryColor,
+    secondaryColor,
+    season: 2025,
+    record: { wins: 11, losses: 6, ties: 0 },
+    expectedWins: 10.4,
     roster: [
       makePlayer(),
       makePlayer({
@@ -231,9 +244,13 @@ export function makeTeam(over: Partial<Team> = {}): Team {
       },
     ],
     stats: { offense: makeStatLine(), defense: makeStatLine({ epaPerPlay: -0.04 }) },
+    // Same season as the file. A per-season team file that carried another
+    // year's games would be exactly the mixing the layout exists to prevent,
+    // and `validate.py` rejects it in the real data.
     games: [
       makeGameSummary({
-        gameId: '2024_01_KC_BUF',
+        gameId: '2025_01_KC_BUF',
+        season: 2025,
         week: 1,
         home: 'BUF',
         away: 'KC',
@@ -241,7 +258,8 @@ export function makeTeam(over: Partial<Team> = {}): Team {
         awayScore: 27,
       }),
       makeGameSummary({
-        gameId: '2024_02_DEN_KC',
+        gameId: '2025_02_DEN_KC',
+        season: 2025,
         week: 2,
         home: 'KC',
         away: 'DEN',
@@ -249,6 +267,87 @@ export function makeTeam(over: Partial<Team> = {}): Team {
         awayScore: 25,
       }),
     ],
+    ...over,
+  }
+}
+
+export function makeSeasonRecord(over: Partial<SeasonRecord> = {}): SeasonRecord {
+  return {
+    season: 2025,
+    team: 'KC',
+    wins: 11,
+    losses: 6,
+    ties: 0,
+    pointsFor: 420,
+    pointsAgainst: 360,
+    expectedWins: 10.4,
+    ...over,
+  }
+}
+
+/**
+ * A standings row for every team in `makeLeague()`, for one season.
+ *
+ * Records descend so a sort has something to order, and expected wins runs
+ * against the record for two of them, so a test can tell the two sorts apart.
+ */
+export function makeStandings(season = 2025): SeasonRecord[] {
+  const wins: Record<string, [number, number]> = {
+    // team -> [actual wins, expected wins]
+    KC: [11, 10.4],
+    DEN: [8, 8.1],
+    BUF: [13, 11.2],
+    NYJ: [5, 6.5],
+    SF: [12, 11.9],
+    ARI: [8, 7.2],
+    PHI: [11, 10.4],
+    NYG: [3, 5.8],
+  }
+  return makeLeague().map((team) => {
+    const [won, expected] = wins[team.id] ?? [8, 8]
+    return makeSeasonRecord({
+      season,
+      team: team.id,
+      wins: won,
+      losses: 17 - won,
+      expectedWins: expected,
+    })
+  })
+}
+
+/** A dashboard card's worth of team: identity joined to one season. */
+export function makeTeamSeasonView(over: Partial<TeamSeasonView> = {}): TeamSeasonView {
+  const { id, name, conference, division, logo, primaryColor, secondaryColor } = makeTeamSummary()
+  return {
+    id,
+    name,
+    conference,
+    division,
+    logo,
+    primaryColor,
+    secondaryColor,
+    season: 2025,
+    record: { wins: 11, losses: 6, ties: 0 },
+    expectedWins: 10.4,
+    ...over,
+  }
+}
+
+/**
+ * A dataset whose six seasons are all complete and whose newest is displayed.
+ *
+ * `teamSeasons` is what the league and team pages may offer; it is a subset of
+ * `seasons`, because a season two games old has replays but no squad.
+ */
+export function makeMeta(over: Partial<Meta> = {}): Meta {
+  const seasons = [2020, 2021, 2022, 2023, 2024, 2025]
+  return {
+    generatedAt: '2026-09-11T05:00:00Z',
+    source: 'nflverse',
+    displaySeason: 2025,
+    latestSeason: 2025,
+    teamSeasons: seasons,
+    seasons: seasons.map((season) => ({ season, scheduled: 285, played: 285, complete: true })),
     ...over,
   }
 }

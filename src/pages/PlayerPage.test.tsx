@@ -9,11 +9,12 @@
  */
 
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PlayerPage from '@/pages/PlayerPage'
 import { DataError } from '@/lib/data'
-import { makeLeague } from '@/test/fixtures'
+import { makeLeague, makeMeta } from '@/test/fixtures'
 import type { PlayerProfile } from '@/types/nfl'
 
 vi.mock('@/lib/data', async (importOriginal) => ({
@@ -103,13 +104,7 @@ beforeEach(() => {
   mockedIndex.mockReset()
   mockedMeta.mockReset()
   mockedIndex.mockResolvedValue(makeLeague())
-  mockedMeta.mockResolvedValue({
-    generatedAt: '2026-09-11T05:00:00Z',
-    source: 'nflverse',
-    displaySeason: 2025,
-    latestSeason: 2026,
-    seasons: [{ season: 2025, scheduled: 285, played: 285, complete: true }],
-  })
+  mockedMeta.mockResolvedValue(makeMeta())
   mockedPlayer.mockResolvedValue(makeProfile())
 })
 
@@ -211,6 +206,64 @@ describe('week by week', () => {
     mount()
     await screen.findByRole('heading', { level: 1 })
     expect(screen.queryByRole('heading', { name: 'Week by week' })).not.toBeInTheDocument()
+  })
+})
+
+describe('choosing a season', () => {
+  const twoSeasons = () =>
+    makeProfile({
+      weeks: [
+        { season: 2024, week: 1, opponent: 'BAL', stats: { passingYards: 291 } },
+        { season: 2024, week: 2, opponent: 'CIN', stats: { passingYards: 151 } },
+        ...makeProfile().weeks,
+      ],
+    })
+
+  it('offers the seasons the player actually played, newest first', async () => {
+    mockedPlayer.mockResolvedValue(twoSeasons())
+    mount()
+    const tabs = await screen.findByRole('group', { name: /Patrick Mahomes season/i })
+    expect(
+      within(tabs)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['2025', '2024'])
+  })
+
+  it('moves the stat groups and the weekly chart together', async () => {
+    mockedPlayer.mockResolvedValue(twoSeasons())
+    mount()
+    const tabs = await screen.findByRole('group', { name: /season/i })
+
+    await userEvent.click(within(tabs).getByRole('button', { name: '2024' }))
+
+    // The 2024 line has no rushing or defensive numbers, and the chart follows
+    // the same season rather than staying on the one above it.
+    expect(await screen.findByRole('heading', { name: '2024 season' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Rushing' })).not.toBeInTheDocument()
+    expect(screen.getByText(/best 291/)).toBeInTheDocument()
+  })
+
+  it('charts one season, not a hundred bars of career', async () => {
+    mockedPlayer.mockResolvedValue(twoSeasons())
+    mount()
+    await screen.findByRole('heading', { name: 'Week by week' })
+    // Three 2025 weeks in the fixture; the two 2024 weeks stay out of it.
+    expect(screen.getByText(/3 of 3 weeks/)).toBeInTheDocument()
+  })
+
+  it('has no season control for a player with a single season', async () => {
+    const one = makeProfile()
+    mockedPlayer.mockResolvedValue(makeProfile({ seasons: one.seasons.slice(1) }))
+    mount()
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.queryByRole('group', { name: /season/i })).not.toBeInTheDocument()
+  })
+
+  it('falls back for a season the player did not play', async () => {
+    mockedPlayer.mockResolvedValue(twoSeasons())
+    mount('/player/00-0033873?season=1999')
+    expect(await screen.findByRole('heading', { name: '2025 season' })).toBeInTheDocument()
   })
 })
 

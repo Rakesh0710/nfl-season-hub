@@ -28,16 +28,16 @@ import {
   winnerOf,
   type Matchup,
 } from '@/lib/compare'
-import { getGamesIndex, getTeam, getTeamsIndex } from '@/lib/data'
+import { getGamesIndex, getMeta, getTeamSeason, getTeamsIndex } from '@/lib/data'
 import { recordLabel } from '@/lib/league'
 import { logoAt } from '@/lib/logos'
 import { shortDate, weekLabel } from '@/lib/football'
 import { TEAM_METRICS } from '@/lib/stats'
 import { useAsync } from '@/lib/useAsync'
-import type { GameSummary, Team, TeamSummary } from '@/types/nfl'
+import type { GameSummary, TeamSeason, TeamSummary } from '@/types/nfl'
 
 /** Both teams and the fixtures between them, or null while a side is unchosen. */
-type Pair = { a: Team; b: Team; between: GameSummary[] } | null
+type Pair = { a: TeamSeason; b: TeamSeason; between: GameSummary[] } | null
 
 /**
  * One shared empty array for the not-yet-loaded case.
@@ -65,9 +65,13 @@ export default function ComparePage() {
     if (matchup.a === null || matchup.b === null) return null
     // The two team files are independent; the game index is usually the only
     // one of the three that is not already in the request cache.
+    // The comparison is of the teams as they are now, so both sides come
+    // from the displayed season — the same one the dashboard opens on.
+    // Meetings, below, still span every season in the dataset.
+    const { displaySeason } = await getMeta()
     const [a, b, games] = await Promise.all([
-      getTeam(matchup.a),
-      getTeam(matchup.b),
+      getTeamSeason(matchup.a, displaySeason),
+      getTeamSeason(matchup.b, displaySeason),
       getGamesIndex(),
     ])
     return { a, b, between: meetings(games, a.id, b.id) }
@@ -188,7 +192,7 @@ function Comparison({ pair }: { pair: NonNullable<Pair> }) {
   )
 }
 
-function Identity({ team, color }: { team: Team; color: string }) {
+function Identity({ team, color }: { team: TeamSeason; color: string }) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900/40 p-4">
       <span
@@ -211,14 +215,14 @@ function Identity({ team, color }: { team: Team; color: string }) {
           {team.name}
         </Link>
         <p className="text-xs text-muted">
-          {team.division} · last season {recordLabel(team.lastSeason)}
+          {team.division} · {team.season} {recordLabel(team.record)}
         </p>
       </div>
       <div className="shrink-0 text-right">
         <p className="text-lg font-bold tabular-nums text-neutral-100">
-          {team.projectedWins.toFixed(1)}
+          {team.expectedWins.toFixed(1)}
         </p>
-        <p className="text-[10px] tracking-wide text-muted uppercase">projected</p>
+        <p className="text-[10px] tracking-wide text-muted uppercase">expected wins</p>
       </div>
     </div>
   )
@@ -232,8 +236,8 @@ function MetricPanel({
   unit,
   lowerIsBetter,
 }: {
-  a: Team
-  b: Team
+  a: TeamSeason
+  b: TeamSeason
   colorA: string
   colorB: string
   unit: 'offense' | 'defense'
@@ -263,8 +267,8 @@ function HeadToHead({
   games,
   record,
 }: {
-  a: Team
-  b: Team
+  a: TeamSeason
+  b: TeamSeason
   games: readonly GameSummary[]
   record: { wins: number; losses: number; ties: number }
 }) {

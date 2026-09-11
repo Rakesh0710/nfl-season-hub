@@ -8,8 +8,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearDataCache, DataError, getGame, getTeam, getTeamsIndex } from '@/lib/data'
-import { makeGame, makeLeague, makeTeam } from '@/test/fixtures'
+import { clearDataCache, DataError, getGame, getTeamSeason, getTeamsIndex } from '@/lib/data'
+import { makeGame, makeLeague, makeTeamSeason } from '@/test/fixtures'
 
 /**
  * A real Response, not a stand-in: the layer reads the status, the headers and
@@ -100,7 +100,7 @@ describe('failures the UI can branch on', () => {
 
   it('reports a truncated file as malformed', async () => {
     fetchMock.mockImplementation(async () => unparseable())
-    expect((await failure(getTeam('KC'))).kind).toBe('malformed')
+    expect((await failure(getTeamSeason('KC', 2025))).kind).toBe('malformed')
   })
 
   it('reports a contract violation as malformed, naming the field', async () => {
@@ -122,17 +122,30 @@ describe('the request cache', () => {
   })
 
   it('serves a later caller from cache', async () => {
-    fetchMock.mockImplementation(async () => respond(makeTeam()))
-    await getTeam('KC')
-    await getTeam('KC')
+    fetchMock.mockImplementation(async () => respond(makeTeamSeason()))
+    await getTeamSeason('KC', 2025)
+    await getTeamSeason('KC', 2025)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('keeps different files apart', async () => {
-    fetchMock.mockImplementation(async () => respond(makeTeam()))
-    await getTeam('KC')
-    await getTeam('BUF')
+    fetchMock.mockImplementation(async () => respond(makeTeamSeason()))
+    await getTeamSeason('KC', 2025)
+    await getTeamSeason('BUF', 2025)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('treats the same team in another season as another file', async () => {
+    // The season is part of the path, so it has to be part of the cache key.
+    // Sharing one entry would serve 2025's squad under a 2021 heading.
+    fetchMock.mockImplementation(async () => respond(makeTeamSeason()))
+    await getTeamSeason('KC', 2025)
+    await getTeamSeason('KC', 2021)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/data/team/2025/KC.json',
+      '/data/team/2021/KC.json',
+    ])
   })
 
   it('evicts a failure, so retrying issues a genuinely new request', async () => {
@@ -145,9 +158,9 @@ describe('the request cache', () => {
   })
 
   it('re-checks a cached body against the contract rather than trusting the entry', async () => {
-    fetchMock.mockImplementation(async () => respond(makeTeam()))
-    const first = await getTeam('KC')
-    const second = await getTeam('KC')
+    fetchMock.mockImplementation(async () => respond(makeTeamSeason()))
+    const first = await getTeamSeason('KC', 2025)
+    const second = await getTeamSeason('KC', 2025)
     // Distinct objects: the second read ran the parser again over the cached
     // body instead of handing back a value the cache could not have typed.
     expect(second).not.toBe(first)

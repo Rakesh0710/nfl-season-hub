@@ -1,66 +1,98 @@
 /**
- * The league dashboard — the season-outlook screen.
+ * The league dashboard.
  *
- * Teams are fetched once and cached by the data layer; sorting and filtering
- * are pure derivations of that array, so neither ever touches the network.
+ * Six seasons of it. Identity comes from `teams-index.json` and every season's
+ * record from `standings.json` — 2.6 KB gzipped for all 192 rows, held at once
+ * so that changing season is a re-render and not a fetch, the same reason
+ * sorting and filtering never touch the network either.
  */
 
 import { domAnimation, LazyMotion, m, useReducedMotion } from 'framer-motion'
 import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import LeagueControls from '@/components/LeagueControls'
+import SeasonTabs from '@/components/SeasonTabs'
 import { ErrorState } from '@/components/States'
 import { LeagueSkeleton } from '@/components/Skeletons'
 import TeamCard from '@/components/TeamCard'
-import { getMeta, getTeamsIndex } from '@/lib/data'
+import { getMeta, getStandings, getTeamsIndex } from '@/lib/data'
 import {
   DEFAULT_VIEW,
   describeView,
   divisionsByConference,
   filterTeams,
+  seasonsIn,
   sortTeams,
+  teamsInSeason,
   viewFromParams,
   viewToParams,
   type LeagueView,
 } from '@/lib/league'
 import { describeCoverage, needsCoverageNotice } from '@/lib/season'
 import { useAsync } from '@/lib/useAsync'
-import type { Meta, TeamSummary } from '@/types/nfl'
+import type { Meta, SeasonRecord, TeamSeasonView, TeamSummary } from '@/types/nfl'
+
+type LeagueData = { teams: TeamSummary[]; standings: SeasonRecord[] }
 
 export default function LeaguePage() {
-  const state = useAsync<TeamSummary[]>('teams-index', getTeamsIndex)
+  const state = useAsync<LeagueData>('league', async () => {
+    // Both are small and neither can draw a card without the other, so they go
+    // together rather than as a waterfall.
+    const [teams, standings] = await Promise.all([getTeamsIndex(), getStandings()])
+    return { teams, standings }
+  })
+
+  /**
+   * Fetched apart from the dashboard, and allowed to fail.
+   *
+   * `meta.json` supplies the season to open on and the coverage note, neither
+   * of which the page needs to be useful — the seasons themselves come from
+   * the standings, which is the data being shown. Folding it into the fetch
+   * above let a 0.2 KB freshness file take the whole dashboard down, which an
+   * end-to-end test that aborts the request caught immediately.
+   */
   const meta = useAsync<Meta>('meta', getMeta)
   const [params, setParams] = useSearchParams()
 
-  const teams = state.status === 'success' ? state.data : undefined
+  const data = state.status === 'success' ? state.data : undefined
 
   // The view lives in the query string, so a filtered dashboard is shareable
   // and survives a refresh. Unknown values fall back to the default.
   const divisions = useMemo(
-    () => (teams ? [...divisionsByConference(teams).values()].flat() : []),
-    [teams],
+    () => (data ? [...divisionsByConference(data.teams).values()].flat() : []),
+    [data],
   )
-  const view = useMemo(() => viewFromParams(params, divisions), [params, divisions])
+  const seasons = useMemo(() => (data ? seasonsIn(data.standings) : []), [data])
+  const view = useMemo(
+    () => viewFromParams(params, divisions, seasons),
+    [params, divisions, seasons],
+  )
   const setView = (next: LeagueView) => setParams(viewToParams(next), { replace: true })
+
+  const displayed = meta.status === 'success' ? meta.data.displaySeason : undefined
+  const opensOn = displayed !== undefined && seasons.includes(displayed) ? displayed : seasons[0]
+  const season = view.season ?? opensOn ?? 0
+  const inSeason = useMemo(
+    () => (data ? teamsInSeason(data.teams, data.standings, season) : []),
+    [data, season],
+  )
 
   // Recomputed only when the data or the view changes, so interacting with the
   // controls never re-sorts more than once and never touches the network.
-  const visible = useMemo(
-    () => (teams ? sortTeams(filterTeams(teams, view), view) : []),
-    [teams, view],
-  )
+  const visible = useMemo(() => sortTeams(filterTeams(inSeason, view), view), [inSeason, view])
 
   if (state.status === 'loading') return <LeagueSkeleton />
   if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
-  const total = state.data.length
+  const total = inSeason.length
 
   return (
     <div>
       <header className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">League</h1>
         <p className="mt-1 max-w-prose text-sm text-neutral-400">
-          All {total} teams by season outlook. Choose a team to open its roster, stats and games.
+          All {total} teams, {seasons.at(-1)} to {seasons[0]}. Choose a season to see how it went,
+          or a team to open its roster, stats and games for that year.
         </p>
       </header>
 
@@ -68,17 +100,28 @@ export default function LeaguePage() {
         <CoverageNotice meta={meta.data} />
       )}
 
-      <LeagueControls teams={state.data} view={view} onChange={setView} />
+      {/* Above the sort and filter controls, because it changes what every
+          number below means rather than which of them are shown. */}
+      <div className="mt-4">
+        <SeasonTabs
+          seasons={seasons}
+          value={season}
+          onChange={(next) => setView({ ...view, season: next })}
+          label="Season"
+        />
+      </div>
+
+      <LeagueControls teams={state.data.teams} view={view} onChange={setView} />
 
       {/* A heading, not a paragraph: the cards below are h3, and without a
           level between them and the page title the outline skipped h1 to h3.
           It keeps announcing itself when the filters change. */}
       <h2 aria-live="polite" className="mt-4 text-sm font-normal text-neutral-400">
-        {describeView(view, visible.length, total)}
+        {describeView(view, visible.length, total, season)}
       </h2>
 
       {visible.length === 0 ? (
-        <EmptyState onReset={() => setView(DEFAULT_VIEW)} />
+        <EmptyState onReset={() => setView({ ...DEFAULT_VIEW, season: view.season })} />
       ) : view.sort === 'division' ? (
         <GroupedTeams teams={visible} />
       ) : (
@@ -86,9 +129,10 @@ export default function LeaguePage() {
       )}
 
       <p className="mt-10 max-w-prose text-xs text-muted">
-        Projected wins are market-implied: each game&rsquo;s closing point spread is converted to a
+        Expected wins are market-implied: each game&rsquo;s closing point spread is converted to a
         win probability and summed across the regular season. They are not a preseason Vegas
-        over/under, which nflverse stopped publishing after 2020.
+        over/under, which nflverse stopped publishing after 2020. Read against the record beside
+        them, the gap is how far a season ran ahead of or behind what the market priced.
       </p>
     </div>
   )
@@ -103,7 +147,7 @@ export default function LeaguePage() {
  * dashboard chunk. `strict` makes using a heavier `motion.*` component here a
  * runtime error rather than a silent regression.
  */
-function TeamGrid({ teams }: { teams: TeamSummary[] }) {
+function TeamGrid({ teams }: { teams: TeamSeasonView[] }) {
   const reduceMotion = useReducedMotion()
   return (
     <LazyMotion features={domAnimation} strict>
@@ -126,8 +170,8 @@ function TeamGrid({ teams }: { teams: TeamSummary[] }) {
 }
 
 /** Division sort earns a heading per division — that is what makes it useful. */
-function GroupedTeams({ teams }: { teams: TeamSummary[] }) {
-  const groups = teams.reduce<Map<string, TeamSummary[]>>((acc, team) => {
+function GroupedTeams({ teams }: { teams: TeamSeasonView[] }) {
+  const groups = teams.reduce<Map<string, TeamSeasonView[]>>((acc, team) => {
     const list = acc.get(team.division) ?? []
     list.push(team)
     acc.set(team.division, list)

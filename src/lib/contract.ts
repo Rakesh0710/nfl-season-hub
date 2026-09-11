@@ -36,8 +36,9 @@ import type {
   GameTeam,
   GameType,
   Player,
-  Team,
+  SeasonRecord,
   TeamRecord,
+  TeamSeason,
   TeamStatLine,
   TeamSummary,
 } from '@/types/nfl'
@@ -275,6 +276,7 @@ export const parseMeta: Parser<Meta> = (value, path) => {
     source: field(o, 'source', string, path),
     displaySeason: field(o, 'displaySeason', number, path),
     latestSeason: field(o, 'latestSeason', number, path),
+    teamSeasons: field(o, 'teamSeasons', arrayOf(number), path),
     seasons: field(o, 'seasons', arrayOf(seasonState), path),
   }
 }
@@ -387,10 +389,19 @@ export const parsePlayersIndex: Parser<PlayerSummary[]> = arrayOf(playerSummary)
 export const parseTeamsIndex: Parser<TeamSummary[]> = arrayOf(teamSummary)
 export const parseGamesIndex: Parser<GameSummary[]> = arrayOf(gameSummary)
 
-export const parseTeam: Parser<Team> = (value, path) => {
+export const parseTeamSeason: Parser<TeamSeason> = (value, path) => {
   const o = object(value, path)
   return {
-    ...teamSummary(value, path),
+    id: field(o, 'id', string, path),
+    name: field(o, 'name', string, path),
+    conference: field(o, 'conference', conference, path),
+    division: field(o, 'division', string, path),
+    logo: field(o, 'logo', string, path),
+    primaryColor: field(o, 'primaryColor', string, path),
+    secondaryColor: field(o, 'secondaryColor', string, path),
+    season: field(o, 'season', number, path),
+    record: field(o, 'record', teamRecord, path),
+    expectedWins: field(o, 'expectedWins', number, path),
     roster: field(o, 'roster', arrayOf(player), path),
     depthChart: field(o, 'depthChart', recordOf(arrayOf(player)), path),
     draftClass: field(o, 'draftClass', arrayOf(draftPick), path),
@@ -409,6 +420,22 @@ export const parseTeam: Parser<Team> = (value, path) => {
     games: field(o, 'games', arrayOf(gameSummary), path),
   }
 }
+
+const seasonRecord: Parser<SeasonRecord> = (value, path) => {
+  const o = object(value, path)
+  return {
+    season: field(o, 'season', number, path),
+    team: field(o, 'team', string, path),
+    wins: field(o, 'wins', number, path),
+    losses: field(o, 'losses', number, path),
+    ties: field(o, 'ties', number, path),
+    pointsFor: field(o, 'pointsFor', number, path),
+    pointsAgainst: field(o, 'pointsAgainst', number, path),
+    expectedWins: field(o, 'expectedWins', number, path),
+  }
+}
+
+export const parseStandings: Parser<SeasonRecord[]> = arrayOf(seasonRecord)
 
 export const parseGame: Parser<Game> = (value, path) => {
   const o = object(value, path)

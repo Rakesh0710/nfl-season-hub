@@ -19,6 +19,7 @@ function makeMeta(over: Partial<Meta> = {}): Meta {
     source: 'nflverse',
     displaySeason: 2025,
     latestSeason: 2026,
+    teamSeasons: [2024, 2025],
     seasons: [
       { season: 2024, scheduled: 285, played: 285, complete: true },
       { season: 2025, scheduled: 285, played: 285, complete: true },

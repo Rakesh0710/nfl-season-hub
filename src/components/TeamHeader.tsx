@@ -1,15 +1,15 @@
 /**
- * Identity block for a team page: logo, name, conference and division, last
- * season's record, and the projected-win visualisation.
+ * Identity block for a team page: logo, name, conference and division, the
+ * season's record, and what the market expected of it.
  */
 
 import { logoAt } from '@/lib/logos'
 import { BAR_TRACK, teamAccent, readableTextOn } from '@/lib/colors'
 import { recordLabel } from '@/lib/league'
 import ProjectedWins from '@/components/ProjectedWins'
-import type { Team } from '@/types/nfl'
+import type { TeamSeason } from '@/types/nfl'
 
-export default function TeamHeader({ team }: { team: Team }) {
+export default function TeamHeader({ team }: { team: TeamSeason }) {
   const accent = teamAccent(BAR_TRACK, team.primaryColor, team.secondaryColor)
   const badgeText = readableTextOn(team.primaryColor)
 
@@ -39,15 +39,15 @@ export default function TeamHeader({ team }: { team: Team }) {
             {team.name}
           </h1>
           <p className="mt-1 text-sm text-neutral-400">
-            Last season{' '}
+            {team.season}{' '}
             <span className="font-semibold text-neutral-200 tabular-nums">
-              {recordLabel(team.lastSeason)}
+              {recordLabel(team.record)}
             </span>
           </p>
         </div>
       </div>
 
-      <ProjectedWins projected={team.projectedWins} lastSeason={team.lastSeason} color={accent} />
+      <ProjectedWins expected={team.expectedWins} actual={team.record.wins} color={accent} />
     </header>
   )
 }

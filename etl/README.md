@@ -15,15 +15,24 @@ Run both from the repo root.
 
 ```
 public/data/
-  teams-index.json       1 file    league dashboard, current season
-  games-index.json       1 file    every game, all six seasons
-  team/<TEAM_ID>.json    32 files  roster, depth chart, draft, stats, games
-  game/<GAME_ID>.json    1693      the replay fuel
+  meta.json                     1 file    freshness, season completeness, which
+                                          seasons have a team layer
+  teams-index.json              1 file    league dashboard identity, current season
+  standings.json                1 file    192 rows: record and expected wins,
+                                          every team, every season
+  games-index.json              1 file    every game, all six seasons
+  team/<SEASON>/<ID>.json       192       one team in one season: record, roster,
+                                          depth chart, draft, stats, games
+  player/<PLAYER_ID>.json       2274      bio, career, every season week by week
+  players-index.json            1 file    the search index
+  game/<GAME_ID>.json           1695      the replay fuel
 ```
 
-The **team layer covers the most recent season in range (2025)**; `lastSeason` is the
-regular-season record of the year before it (2024). The **game layer spans all six seasons**, so
-every replay from 2020 onward is reachable from the game browser.
+The **team layer covers every season complete enough to describe** — one directory per season,
+one file per team, everything in it from that year. A season is described only once it is
+finished or has passed `PROMOTE_MIN_PLAYED` (64 games); until then it has replays but no squad,
+and `meta.teamSeasons` says so. `teams-index.json` still describes the current season alone, and
+its `lastSeason` is the regular-season record of the year before it.
 
 ## The key-play rule
 

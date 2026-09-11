@@ -12,7 +12,8 @@ import {
   parsePlayer,
   parsePlayersIndex,
   parseGamesIndex,
-  parseTeam,
+  parseStandings,
+  parseTeamSeason,
   parseTeamsIndex,
 } from '@/lib/contract'
 import type {
@@ -21,7 +22,8 @@ import type {
   Meta,
   PlayerProfile,
   PlayerSummary,
-  Team,
+  SeasonRecord,
+  TeamSeason,
   TeamSummary,
 } from '@/types/nfl'
 
@@ -147,9 +149,28 @@ export function getTeamsIndex(): Promise<TeamSummary[]> {
   return request('teams-index.json', parseTeamsIndex)
 }
 
-/** One team: roster, depth chart, draft class, stats and that season's games. */
-export function getTeam(id: string): Promise<Team> {
-  return request(`team/${encodeURIComponent(id)}.json`, parseTeam)
+/**
+ * One team in one season: record, roster, depth chart, draft class, stat lines
+ * and that season's games.
+ *
+ * A visitor fetches exactly one of these — 3.8 KB gzipped — whichever of the
+ * six seasons they are looking at. The file used to be one per team carrying
+ * every season's games with the newest season's squad; splitting it by season
+ * made it smaller, not larger.
+ */
+export function getTeamSeason(id: string, season: number): Promise<TeamSeason> {
+  return request(`team/${season}/${encodeURIComponent(id)}.json`, parseTeamSeason)
+}
+
+/**
+ * Every team's record and expected wins, for every season with a team layer.
+ *
+ * 2.6 KB gzipped for all 192 rows, so the league dashboard can switch seasons
+ * without going back to the network — the same reason it holds all 32 teams
+ * rather than paging them.
+ */
+export function getStandings(): Promise<SeasonRecord[]> {
+  return request('standings.json', parseStandings)
 }
 
 /**

@@ -10,9 +10,9 @@ import { Link } from 'react-router-dom'
 import { logoAt } from '@/lib/logos'
 import { BAR_TRACK, teamAccent, readableTextOn } from '@/lib/colors'
 import { recordLabel } from '@/lib/league'
-import type { TeamSummary } from '@/types/nfl'
+import type { TeamSeasonView } from '@/types/nfl'
 
-/** The dashboard's win scale. Nobody projects past this, so the bar stays comparable. */
+/** The dashboard's win scale, so the bar means the same thing on every card. */
 const MAX_WINS = 17
 
 const cardVariants = {
@@ -27,16 +27,16 @@ const cardVariants = {
   },
 }
 
-export default function TeamCard({ team }: { team: TeamSummary }) {
+export default function TeamCard({ team }: { team: TeamSeasonView }) {
   const accent = teamAccent(BAR_TRACK, team.primaryColor, team.secondaryColor)
   const badgeText = readableTextOn(team.primaryColor)
-  const projected = team.projectedWins
-  const share = Math.max(0, Math.min(1, projected / MAX_WINS))
+  const expected = team.expectedWins
+  const share = Math.max(0, Math.min(1, expected / MAX_WINS))
 
   return (
     <m.li variants={cardVariants}>
       <Link
-        to={`/team/${team.id}`}
+        to={`/team/${team.id}?season=${team.season}`}
         className="group relative flex h-full flex-col gap-3 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 transition-colors hover:border-neutral-600 hover:bg-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
       >
         {/* Team colour as an accent stripe, never behind body text. */}
@@ -75,19 +75,16 @@ export default function TeamCard({ team }: { team: TeamSummary }) {
 
         <dl className="flex items-end justify-between gap-3 pl-2">
           <div>
-            <dt className="text-[11px] tracking-wide text-muted uppercase">Last season</dt>
-            <dd className="text-lg font-semibold tabular-nums">{recordLabel(team.lastSeason)}</dd>
+            <dt className="text-[11px] tracking-wide text-muted uppercase">{team.season}</dt>
+            <dd className="text-lg font-semibold tabular-nums">{recordLabel(team.record)}</dd>
           </div>
           <div className="text-right">
-            <dt className="text-[11px] tracking-wide text-muted uppercase">Projected</dt>
+            <dt className="text-[11px] tracking-wide text-muted uppercase">Expected</dt>
             {/* One decimal is the honest precision for a market-derived
                 estimate, but it makes near-neighbours look tied, so the exact
                 figure stays available on hover. */}
-            <dd
-              className="text-lg font-semibold tabular-nums"
-              title={`${projected} projected wins`}
-            >
-              {projected.toFixed(1)}
+            <dd className="text-lg font-semibold tabular-nums" title={`${expected} expected wins`}>
+              {expected.toFixed(1)}
             </dd>
           </div>
         </dl>
@@ -96,7 +93,7 @@ export default function TeamCard({ team }: { team: TeamSummary }) {
           <div
             className="h-1.5 overflow-hidden rounded-full bg-neutral-800"
             role="img"
-            aria-label={`${projected.toFixed(1)} projected wins out of ${MAX_WINS}`}
+            aria-label={`${expected.toFixed(1)} expected wins out of ${MAX_WINS}`}
           >
             <span
               className="block h-full rounded-full"

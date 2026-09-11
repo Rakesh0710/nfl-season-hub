@@ -49,7 +49,7 @@ def choose_display_season(states: list[dict]) -> int:
     return max(eligible)
 
 
-def build_meta(states: list[dict], display: int) -> dict:
+def build_meta(states: list[dict], display: int, team_seasons: list[int]) -> dict:
     """The freshness and completeness record the frontend reads."""
     return {
         # Whole seconds, UTC: a timestamp with microseconds in it changes on
@@ -58,6 +58,10 @@ def build_meta(states: list[dict], display: int) -> dict:
         "source": "nflverse",
         "displaySeason": display,
         "latestSeason": max(s["season"] for s in states),
+        # Which seasons have a team layer behind them, and so which ones the
+        # league and team pages may offer. A season with two games played has
+        # a schedule and a handful of replays but no squad worth describing.
+        "teamSeasons": sorted(team_seasons),
         "seasons": states,
     }
 

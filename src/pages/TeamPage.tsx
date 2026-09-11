@@ -7,7 +7,6 @@
  */
 
 import { domAnimation, LazyMotion, m, useReducedMotion } from 'framer-motion'
-import { useMemo } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import DepthChart from '@/components/DepthChart'
 import DraftClass from '@/components/DraftClass'
@@ -19,10 +18,9 @@ import { TeamSkeleton } from '@/components/Skeletons'
 import TeamHeader from '@/components/TeamHeader'
 import TeamStats from '@/components/TeamStats'
 import { BAR_TRACK, teamAccent } from '@/lib/colors'
-import { defaultSeason, seasonsIn } from '@/lib/football'
-import { getMeta, getTeam, getTeamsIndex } from '@/lib/data'
+import { getMeta, getTeamSeason, getTeamsIndex } from '@/lib/data'
 import { useAsync } from '@/lib/useAsync'
-import type { Meta, Team, TeamSummary } from '@/types/nfl'
+import type { TeamSeason, TeamSummary } from '@/types/nfl'
 
 const SECTIONS = [
   { id: 'games', label: 'Games' },
@@ -32,28 +30,51 @@ const SECTIONS = [
   { id: 'draft', label: 'Draft class' },
 ]
 
-type TeamPageData = { team: Team; teamsById: Map<string, TeamSummary> }
+type TeamPageData = {
+  team: TeamSeason
+  teamsById: Map<string, TeamSummary>
+  /** Seasons with a team layer behind them, newest first. */
+  seasons: number[]
+}
 
 export default function TeamPage() {
   const { id = '' } = useParams<{ id: string }>()
   const teamId = id.toUpperCase()
-
-  // The index is already cached if the visitor arrived from the dashboard; it
-  // supplies opponent names and logos for the games list.
-  // Already in the request cache: the footer fetches it on every page.
-  const meta = useAsync<Meta>('meta', getMeta)
   const [params, setParams] = useSearchParams()
-  const state = useAsync<TeamPageData>(`team/${teamId}`, async () => {
-    const [team, index] = await Promise.all([getTeam(teamId), getTeamsIndex()])
-    return { team, teamsById: new Map(index.map((t) => [t.id, t])) }
+  const asked = params.get('season')
+
+  /**
+   * The season is resolved inside the fetch rather than around it.
+   *
+   * Which file to ask for depends on `meta.json` — for the list of seasons
+   * that have a team layer, and for the one to open on — so the choice cannot
+   * be made before the first request completes. Resolving it here keeps the
+   * page to a single async unit instead of a conditional second one, and
+   * `meta.json` is already in the request cache: the footer fetches it on
+   * every page.
+   *
+   * A hand-edited or stale `?season=` falls back to the displayed season
+   * rather than 404ing, the same rule the dashboard and the comparison follow.
+   */
+  const state = useAsync<TeamPageData>(`team/${teamId}/${asked ?? 'default'}`, async () => {
+    const meta = await getMeta()
+    const wanted = Number(asked)
+    const season = meta.teamSeasons.includes(wanted) ? wanted : meta.displaySeason
+    // The index is already cached if the visitor arrived from the dashboard;
+    // it supplies opponent names and logos for the games list.
+    const [team, index] = await Promise.all([getTeamSeason(teamId, season), getTeamsIndex()])
+    return {
+      team,
+      teamsById: new Map(index.map((t) => [t.id, t])),
+      seasons: [...meta.teamSeasons].sort((a, b) => b - a),
+    }
   })
 
   if (state.status === 'loading') return <TeamSkeleton />
   if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
-  const { team, teamsById } = state.data
+  const { team, teamsById, seasons } = state.data
   const accent = teamAccent(BAR_TRACK, team.primaryColor, team.secondaryColor)
-  const statsSeason = meta.status === 'success' ? meta.data.displaySeason : undefined
 
   return (
     <LazyMotion features={domAnimation} strict>
@@ -65,6 +86,16 @@ export default function TeamPage() {
           <span aria-hidden> / </span>
           <span className="text-neutral-300">{team.name}</span>
         </nav>
+
+        {/* Governs the whole page, not just the games below it. Every section
+            describes the same year, so there is one control and no caveat
+            about which parts of the page moved and which did not. */}
+        <SeasonTabs
+          seasons={seasons}
+          value={team.season}
+          onChange={(next) => setParams({ season: String(next) }, { replace: true })}
+          label={`${team.name} season`}
+        />
 
         <TeamHeader team={team} />
 
@@ -92,21 +123,11 @@ export default function TeamPage() {
         </div>
 
         <Section id="games" title="Games">
-          <TeamGames
-            team={team}
-            teamsById={teamsById}
-            statsSeason={statsSeason}
-            season={params.get('season')}
-            onSeason={(next) => setParams({ season: String(next) }, { replace: true })}
-          />
+          <GamesList games={team.games} teamId={team.id} teamsById={teamsById} />
         </Section>
 
         <Section id="stats" title="Team stats">
-          <TeamStats
-            stats={team.stats}
-            color={accent}
-            season={meta.status === 'success' ? meta.data.displaySeason : undefined}
-          />
+          <TeamStats stats={team.stats} color={accent} season={team.season} />
         </Section>
 
         <Section id="depth" title="Depth chart">
@@ -125,64 +146,6 @@ export default function TeamPage() {
   )
 }
 
-/**
- * A team's games, one season at a time.
- *
- * The team file carries every season — around 105 games — because the replays
- * are what the site is for and this list is the route to them. The rest of the
- * page describes one season, so the note below says which; a stat block from
- * 2025 above a game from 2020 is exactly the kind of mixing that needs a
- * sentence rather than an assumption.
- */
-function TeamGames({
-  team,
-  teamsById,
-  statsSeason,
-  season,
-  onSeason,
-}: {
-  team: Team
-  teamsById: Map<string, TeamSummary>
-  statsSeason: number | undefined
-  season: string | null
-  onSeason: (season: number) => void
-}) {
-  const seasons = useMemo(() => seasonsIn(team.games), [team.games])
-
-  // A hand-edited or stale `?season=` falls back rather than showing nothing,
-  // the same rule the league dashboard and the comparison follow.
-  const asked = Number(season)
-  const wanted = seasons.includes(asked) ? asked : undefined
-  const selected = wanted ?? defaultSeason(team.games, statsSeason)
-  const games = team.games.filter((game) => game.season === selected)
-
-  return (
-    <div>
-      <SeasonTabs
-        seasons={seasons}
-        value={selected}
-        onChange={onSeason}
-        label={`${team.id} games by season`}
-      />
-      <GamesList games={games} teamId={team.id} teamsById={teamsById} />
-      {statsSeason !== undefined && seasons.length > 1 && (
-        <p className="mt-3 text-xs text-muted">
-          Every season in the dataset. The roster, depth chart and stats elsewhere on this page
-          describe {statsSeason}.
-        </p>
-      )}
-    </div>
-  )
-}
-
-/**
- * A section that fades up the first time it is scrolled to.
- *
- * The reveal can only ever add opacity, never withhold it: the element is
- * rendered in place with its final layout, and a visitor who prefers reduced
- * motion — or whose browser never fires the observer — sees it immediately.
- * `once` means scrolling back up does not replay anything.
- */
 function Section({
   id,
   title,

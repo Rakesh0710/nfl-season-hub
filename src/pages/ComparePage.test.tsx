@@ -13,22 +13,24 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ComparePage from '@/pages/ComparePage'
 import { DataError } from '@/lib/data'
-import { makeGameSummary, makeLeague, makeTeam } from '@/test/fixtures'
+import { makeGameSummary, makeLeague, makeMeta, makeTeamSeason } from '@/test/fixtures'
 
 vi.mock('@/lib/data', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/data')>()),
   getTeamsIndex: vi.fn(),
-  getTeam: vi.fn(),
+  getTeamSeason: vi.fn(),
   getGamesIndex: vi.fn(),
+  getMeta: vi.fn(),
 }))
 
-const { getTeamsIndex, getTeam, getGamesIndex } = await import('@/lib/data')
+const { getTeamsIndex, getTeamSeason, getGamesIndex, getMeta } = await import('@/lib/data')
 const mockedIndex = vi.mocked(getTeamsIndex)
-const mockedTeam = vi.mocked(getTeam)
+const mockedTeam = vi.mocked(getTeamSeason)
 const mockedGames = vi.mocked(getGamesIndex)
+const mockedMeta = vi.mocked(getMeta)
 
 /** KC leads every offensive metric; BUF concedes less on defence. */
-const KC = makeTeam({
+const KC = makeTeamSeason({
   id: 'KC',
   name: 'Kansas City Chiefs',
   stats: {
@@ -51,7 +53,7 @@ const KC = makeTeam({
   },
 })
 
-const BUF = makeTeam({
+const BUF = makeTeamSeason({
   id: 'BUF',
   name: 'Buffalo Bills',
   division: 'AFC East',
@@ -118,9 +120,11 @@ beforeEach(() => {
   mockedIndex.mockReset()
   mockedTeam.mockReset()
   mockedGames.mockReset()
+  mockedMeta.mockReset()
+  mockedMeta.mockResolvedValue(makeMeta())
   mockedIndex.mockResolvedValue(makeLeague())
   mockedGames.mockResolvedValue(H2H)
-  mockedTeam.mockImplementation(async (id) => (id === 'BUF' ? BUF : KC))
+  mockedTeam.mockImplementation(async (id: string) => (id === 'BUF' ? BUF : KC))
 })
 
 describe('before two teams are chosen', () => {
@@ -162,8 +166,10 @@ describe('a loaded comparison', () => {
     mount('/compare?a=KC&b=BUF')
     await screen.findByRole('heading', { name: 'Offense' })
     expect(mockedTeam).toHaveBeenCalledTimes(2)
-    expect(mockedTeam).toHaveBeenCalledWith('KC')
-    expect(mockedTeam).toHaveBeenCalledWith('BUF')
+    // Both sides come from the displayed season: the comparison is of the
+    // teams as they are now, not of two different years.
+    expect(mockedTeam).toHaveBeenCalledWith('KC', 2025)
+    expect(mockedTeam).toHaveBeenCalledWith('BUF', 2025)
     expect(mockedGames).toHaveBeenCalledTimes(1)
   })
 

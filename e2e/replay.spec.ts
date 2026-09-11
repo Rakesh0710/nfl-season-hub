@@ -179,12 +179,12 @@ test('a filtered league view survives a reload, because it lives in the URL', as
 })
 
 test('a team page reaches every season of replays, not just the current one', async ({ page }) => {
-  // Before the team file carried all seasons, 1,409 of the 1,694 shipped
+  // Before the team layer was split by season, 1,409 of the 1,694 shipped
   // replays had no route to them from anywhere in the UI.
   await page.goto('/team/KC')
   await expect(page.getByRole('heading', { level: 1, name: /Chiefs/ })).toBeVisible()
 
-  const seasons = page.getByRole('group', { name: /games by season/i })
+  const seasons = page.getByRole('group', { name: /Chiefs season/i })
   await expect(seasons).toBeVisible()
   const labels = await seasons.getByRole('button').allTextContents()
   expect(labels.length).toBeGreaterThanOrEqual(6)
@@ -210,7 +210,7 @@ test('a team page reaches every season of replays, not just the current one', as
 test('a chosen season survives a reload, because it is in the URL', async ({ page }) => {
   await page.goto('/team/PHI?season=2021')
   await expect(page.getByRole('heading', { level: 1, name: /Eagles/ })).toBeVisible()
-  const seasons = page.getByRole('group', { name: /games by season/i })
+  const seasons = page.getByRole('group', { name: /Eagles season/i })
   await expect(seasons.getByRole('button', { name: '2021' })).toHaveAttribute(
     'aria-pressed',
     'true',

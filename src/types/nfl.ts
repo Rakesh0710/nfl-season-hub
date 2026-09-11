@@ -95,7 +95,39 @@ export interface GameSummary {
 }
 
 /** `team/<TEAM_ID>.json` — the team page. */
-export interface Team extends TeamSummary {
+/**
+ * `team/<season>/<ID>.json` — one team, one season, whole.
+ *
+ * Everything on this page describes the same year: the record, the squad, the
+ * depth chart, the draft class, the stat lines and the games. That is the
+ * point of the shape. It used to be one file per team describing whichever
+ * season `meta.displaySeason` named, which meant the site held six seasons of
+ * replays behind a page whose roster and stat lines were always the newest
+ * one — the only way to look at the 2020 Chiefs was to read their 2020 scores
+ * underneath their 2025 squad.
+ *
+ * Not an extension of `TeamSummary`. That interface carries `lastSeason` and
+ * `projectedWins`, both of which are relative to "now"; a season page wants
+ * this season's record and what the market expected of it, which is a
+ * different question with different answers.
+ */
+export interface TeamSeason {
+  id: string
+  name: string
+  conference: Conference
+  division: string
+  logo: string
+  primaryColor: string
+  secondaryColor: string
+  season: number
+  /** This season's regular-season record. */
+  record: TeamRecord
+  /**
+   * Market-implied expected wins for this season, from closing spreads. Read
+   * against `record.wins` it is an over/underperformance figure: the 2021
+   * Chiefs won 12 games the market priced at 10.4.
+   */
+  expectedWins: number
   roster: Player[]
   /** Position -> players in depth order; index 0 is the starter. */
   depthChart: Record<string, Player[]>
@@ -104,16 +136,49 @@ export interface Team extends TeamSummary {
     offense: TeamStatLine
     defense: TeamStatLine
   }
-  /**
-   * Every game this team has played across all seasons in the dataset, oldest
-   * first — roughly 105, not the 17 of one season.
-   *
-   * Deliberately wider than the rest of the team file, which describes a
-   * single season: the replays are the point of the site and the team page is
-   * how anyone reaches them. Consumers that want one season filter by
-   * `season`; `meta.displaySeason` says which one the stat lines above match.
-   */
+  /** This season's games, oldest first — the route into the replays. */
   games: GameSummary[]
+}
+
+/**
+ * One row of `standings.json`: one team, one season.
+ *
+ * A flat array of 32 x 6, about 2 KB gzipped, so the league dashboard can
+ * switch seasons without a fetch. Kept out of `teams-index.json` because that
+ * contract is read by the comparison page and every team page too, and this
+ * is a different question — what happened in a given year, rather than who
+ * the teams are now.
+ */
+export interface SeasonRecord {
+  season: number
+  team: string
+  wins: number
+  losses: number
+  ties: number
+  pointsFor: number
+  pointsAgainst: number
+  /** Market-implied, from each game's closing spread. */
+  expectedWins: number
+}
+
+/**
+ * A team as the league dashboard shows it for one chosen season: who they are,
+ * plus how that season went.
+ *
+ * Built in the browser by joining `teams-index.json` to `standings.json`; no
+ * file has this shape.
+ */
+export interface TeamSeasonView {
+  id: string
+  name: string
+  conference: Conference
+  division: string
+  logo: string
+  primaryColor: string
+  secondaryColor: string
+  season: number
+  record: TeamRecord
+  expectedWins: number
 }
 
 /** One play in a replay — the array the animation walks. */
@@ -266,7 +331,10 @@ export interface PlayerProfile {
   draft?: { year?: number; pick?: number; club?: string }
   /** Oldest first; only seasons with recorded production. */
   seasons: PlayerSeason[]
-  /** The displayed season, week by week. Empty if they did not play in it. */
+  /**
+   * Every week with a recorded stat line, oldest first, across every season in
+   * `seasons`. Empty only for a player with no weekly rows at all.
+   */
   weeks: PlayerWeek[]
 }
 
@@ -294,6 +362,15 @@ export interface Meta {
   displaySeason: number
   /** The newest season nflverse has published a schedule for. */
   latestSeason: number
+  /**
+   * The seasons with a team layer behind them, ascending — which seasons the
+   * league dashboard and the team pages may offer.
+   *
+   * Not every season in `seasons`: one two games old has a schedule and a
+   * handful of replays but no squad, stat line or record worth describing, so
+   * the ETL holds it back until it is far enough along.
+   */
+  teamSeasons: number[]
   seasons: SeasonState[]
 }
 

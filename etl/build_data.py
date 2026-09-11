@@ -629,8 +629,15 @@ def build_players(
         if not history:
             continue
 
+        # Every season, ordered, not just the displayed one. The career table
+        # on a player page already spans the whole dataset; a weekly chart that
+        # stopped at one season was the only part of that page that did not.
+        # Costs about 700 bytes gzipped for a six-season career.
         weeks = []
-        for r in sorted(by_season.get(display, []), key=lambda x: x["week"]):
+        for r in sorted(
+            (r for rows in by_season.values() for r in rows),
+            key=lambda x: (int(x["season"]), int(x["week"])),
+        ):
             line = stat_line(r, columns)
             if not line:
                 continue
@@ -788,6 +795,19 @@ def main() -> None:
         star = "  <- team layer" if state["season"] == display else ""
         print(f"  {state['season']}: {state['played']}/{state['scheduled']} played, {mark}{star}")
 
+    # The seasons a team layer is allowed to describe: complete, or far enough
+    # in to mean something. The same rule that decides which season the site
+    # displays, applied to which seasons it offers at all — without it, a
+    # two-game September would put a 2026 dashboard on the season selector
+    # showing four teams and empty stat lines.
+    #
+    # Computed from every known season rather than from this run's rebuild, so
+    # a refresh reports the layers on disk and not just the one it touched.
+    presentable = [
+        st["season"] for st in states
+        if st["complete"] or st["played"] >= PROMOTE_MIN_PLAYED
+    ]
+
     current = display
     schedules = all_schedules
     # A career spans the whole dataset even when only one season is rebuilt.
@@ -805,6 +825,10 @@ def main() -> None:
     games_index: list[dict] = []
     game_sizes: list[int] = []
     rebuilt_seasons = set(seasons)
+    # Stat lines are computed while that season's play-by-play is already in
+    # memory for the game layer. Loading 300-column pbp a second time, once per
+    # season, is the most expensive thing this script could do twice.
+    stat_lines: dict[int, dict[str, dict]] = {}
 
     # ---- game layer: every season ----
     for season in seasons:
@@ -814,6 +838,7 @@ def main() -> None:
         summaries = [game_summary(r) for r in sched.iter_rows(named=True)]
 
         pbp = nfl.load_pbp(seasons=[season])
+        stat_lines[season] = build_stat_lines(pbp, records.get(season, {}))
         by_game = dict(pbp.partition_by("game_id", as_dict=True, include_key=True))
 
         written = 0
@@ -847,14 +872,47 @@ def main() -> None:
     games_index = merge_index(existing, games_index, rebuilt_seasons)
     total_bytes += write_json(out / "games-index.json", games_index)
 
-    # ---- team layer: the current season only ----
-    print(f"\n  team layer [{current}]")
-    pbp_now = nfl.load_pbp(seasons=[current])
+    # ---- team layer: every season this run rebuilt ----
+    #
+    # One file per team per season, at team/<season>/<ID>.json. It used to be
+    # one file per team describing the display season, which meant the site
+    # held six seasons of replays behind a page whose roster, depth chart,
+    # stat lines and record were all 2025 — the only way to see the 2020
+    # Chiefs was to read their 2020 scores under their 2025 squad.
+    #
+    # A visitor still fetches exactly one of these, so the page costs what it
+    # always did; it is the repository that grows, by about 6 MB against the
+    # 79 MB of replays already in it.
+    #
+    # A refresh rebuilds only the seasons whose play-by-play it downloaded. A
+    # completed season's roster, draft class and stat lines never change again,
+    # so rewriting them weekly would be churn with no content.
+    team_seasons = [season for season in sorted(rebuilt_seasons) if season in presentable]
+    print(f"\n  team layer {team_seasons}")
+    if skipped := sorted(rebuilt_seasons - set(presentable)):
+        print(f"  (no team layer for {skipped}: too few games played to describe)")
+
+    layers: dict[int, dict] = {}
+    for season in team_seasons:
+        rosters, by_id, roster_rows = build_rosters(season)
+        layers[season] = {
+            "rosters": rosters,
+            "byId": by_id,
+            "roster_rows": roster_rows,
+            "depth": build_depth_charts(season, by_id),
+            "draft": build_draft(season),
+            "stats": stat_lines.get(season, {}),
+        }
+        print(f"  [{season}] {sum(len(r) for r in rosters.values())} rostered")
+
+    # The player layer is built from the display season's roster, whichever
+    # seasons the team layer happens to cover this run.
+    if current in layers:
+        roster_rows = layers[current]["roster_rows"]
+    else:
+        _, _, roster_rows = build_rosters(current)
+
     rec_now = records.get(current, {})
-    stat_lines = build_stat_lines(pbp_now, rec_now)
-    rosters, by_id, roster_rows = build_rosters(current)
-    depth = build_depth_charts(current, by_id)
-    draft = build_draft(current)
     prior = records.get(current - 1, {})
 
     teams_index: list[dict] = []
@@ -881,10 +939,13 @@ def main() -> None:
     )
 
     # A roster row says whether there is a page behind the name, so the UI can
-    # link the ones that lead somewhere and leave the rest as plain text.
-    for player in by_id.values():
-        if player["id"] in profiled:
-            player["hasProfile"] = True
+    # link the ones that lead somewhere and leave the rest as plain text. Every
+    # season's rosters, not just the displayed one: a 2020 roster is full of
+    # players who are still profiled, and full of players who are not.
+    for layer in layers.values():
+        for player in layer["byId"].values():
+            if player["id"] in profiled:
+                player["hasProfile"] = True
 
     if len(teams_index) < len(team_meta):
         missing = sorted(set(team_meta) - {s["id"] for s in teams_index})
@@ -897,27 +958,69 @@ def main() -> None:
 
     total_bytes += write_json(out / "teams-index.json", teams_index)
 
-    for summary in teams_index:
-        team_id = summary["id"]
-        # Every season, not just the one the stat lines describe. The site
-        # ships six seasons of replays and the team page is the way in; when
-        # this carried one season, 1,409 of 1,694 replays had no route to them
-        # at all. Ordered oldest first so the page can group by season without
-        # sorting again. Costs about 2 KB gzipped per team file.
-        team_games = sorted(
-            (s for s in games_index if s["home"] == team_id or s["away"] == team_id),
-            key=lambda s: (s["season"], s["week"], s["date"]),
-        )
-        total_bytes += write_json(out / "team" / f"{team_id}.json", {
-            **summary,
-            "roster": rosters.get(team_id, []),
-            "depthChart": depth.get(team_id, {}),
-            "draftClass": draft.get(team_id, []),
-            "stats": stat_lines.get(team_id, {}),
-            "games": team_games,
-        })
+    # ---- standings: every season, every team ----
+    #
+    # A separate file rather than more fields on teams-index.json. The
+    # dashboard's whole appeal is that sorting and filtering are instant, so a
+    # season switch has to be instant too — which means holding all of them at
+    # once — and teams-index is a locked contract that the comparison page and
+    # every team page also read.
+    standings = [
+        {
+            "season": season,
+            "team": team_id,
+            "wins": rec["wins"],
+            "losses": rec["losses"],
+            "ties": rec["ties"],
+            "pointsFor": rec["pointsFor"],
+            "pointsAgainst": rec["pointsAgainst"],
+            "expectedWins": num(rec["expectedWins"], 2),
+        }
+        for season in presentable
+        for team_id, rec in sorted(records.get(season, {}).items())
+    ]
+    total_bytes += write_json(out / "standings.json", standings)
+    print(f"  {len(standings)} standings rows over {len(presentable)} seasons")
 
-    total_bytes += write_json(out / "meta.json", build_meta(states, display))
+    # Anything the team layer no longer covers: flat files from a build that
+    # predates the per-season layer, and season directories for a season that
+    # has since been judged too thin to describe. Left behind, they would be
+    # served to anyone who kept the URL.
+    for old_file in out.glob("team/*.json"):
+        old_file.unlink()
+    for old_dir in sorted(out.glob("team/*")):
+        if old_dir.is_dir() and int(old_dir.name) not in presentable:
+            shutil.rmtree(old_dir)
+            print(f"  removed the stale {old_dir.name} team layer")
+
+    for season in team_seasons:
+        layer = layers[season]
+        rec_season = records.get(season, {})
+        for team_id in sorted(team_meta):
+            rec = rec_season.get(team_id)
+            if not rec:
+                # A team that did not play that season — relocations, mostly.
+                continue
+            team_games = sorted(
+                (
+                    s for s in games_index
+                    if s["season"] == season and (s["home"] == team_id or s["away"] == team_id)
+                ),
+                key=lambda s: (s["week"], s["date"]),
+            )
+            total_bytes += write_json(out / "team" / str(season) / f"{team_id}.json", {
+                **team_meta[team_id],
+                "season": season,
+                "record": {"wins": rec["wins"], "losses": rec["losses"], "ties": rec["ties"]},
+                "expectedWins": num(rec["expectedWins"], 2),
+                "roster": layer["rosters"].get(team_id, []),
+                "depthChart": layer["depth"].get(team_id, {}),
+                "draftClass": layer["draft"].get(team_id, []),
+                "stats": layer["stats"].get(team_id, {}),
+                "games": team_games,
+            })
+
+    total_bytes += write_json(out / "meta.json", build_meta(states, display, presentable))
 
     avg = sum(game_sizes) / len(game_sizes) / 1024 if game_sizes else 0
     print(

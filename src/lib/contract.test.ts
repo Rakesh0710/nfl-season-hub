@@ -13,10 +13,12 @@ import {
   ContractError,
   parseGame,
   parseGamesIndex,
-  parseTeam,
+  parseMeta,
+  parseStandings,
+  parseTeamSeason,
   parseTeamsIndex,
 } from '@/lib/contract'
-import { makeGame, makeTeam } from '@/test/fixtures'
+import { makeGame, makeTeamSeason } from '@/test/fixtures'
 
 const read = (path: string): unknown => JSON.parse(readFileSync(`public/data/${path}`, 'utf8'))
 
@@ -24,8 +26,25 @@ describe('the generated data', () => {
   it('matches the contract, file by file', () => {
     expect(() => parseTeamsIndex(read('teams-index.json'), 'teams-index')).not.toThrow()
     expect(() => parseGamesIndex(read('games-index.json'), 'games-index')).not.toThrow()
-    expect(() => parseTeam(read('team/KC.json'), 'team/KC')).not.toThrow()
+    expect(() => parseTeamSeason(read('team/2025/KC.json'), 'team/2025/KC')).not.toThrow()
+    expect(() => parseStandings(read('standings.json'), 'standings')).not.toThrow()
+    expect(() => parseMeta(read('meta.json'), 'meta')).not.toThrow()
     expect(() => parseGame(read('game/2023_12_NO_ATL.json'), 'game')).not.toThrow()
+  })
+
+  it('parses the oldest team layer as readily as the newest', () => {
+    // The layout is six directories deep in the same shape. A parser that only
+    // ever met the displayed season would not notice a 2020 file drifting.
+    const oldest = parseTeamSeason(read('team/2020/KC.json'), 'team/2020/KC')
+    expect(oldest.season).toBe(2020)
+    expect(oldest.games.every((game) => game.season === 2020)).toBe(true)
+  })
+
+  it('has a standings row for every team in every season the meta advertises', () => {
+    const meta = parseMeta(read('meta.json'), 'meta')
+    const standings = parseStandings(read('standings.json'), 'standings')
+    const teams = parseTeamsIndex(read('teams-index.json'), 'teams-index')
+    expect(standings).toHaveLength(meta.teamSeasons.length * teams.length)
   })
 
   it('covers all 32 teams', () => {
@@ -102,19 +121,19 @@ describe('accepting what the contract allows', () => {
   })
 
   it('ignores a field this build has never heard of', () => {
-    const parsed = parseTeam({ ...makeTeam(), futureField: 42 }, 'team')
+    const parsed = parseTeamSeason({ ...makeTeamSeason(), futureField: 42 }, 'team')
     expect(parsed.id).toBe('KC')
   })
 
   it('keeps the depth chart keyed by whatever positions the data uses', () => {
-    const parsed = parseTeam(
-      { ...makeTeam(), depthChart: { NB: [{ id: '1', name: 'A', position: 'NB' }] } },
+    const parsed = parseTeamSeason(
+      { ...makeTeamSeason(), depthChart: { NB: [{ id: '1', name: 'A', position: 'NB' }] } },
       'team',
     )
     expect(Object.keys(parsed.depthChart)).toEqual(['NB'])
   })
 
   it('accepts an empty games list for a team with no schedule yet', () => {
-    expect(parseTeam({ ...makeTeam(), games: [] }, 'team').games).toEqual([])
+    expect(parseTeamSeason({ ...makeTeamSeason(), games: [] }, 'team').games).toEqual([])
   })
 })

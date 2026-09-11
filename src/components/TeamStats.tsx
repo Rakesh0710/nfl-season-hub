@@ -11,10 +11,10 @@
 
 import StatBar from '@/components/StatBar'
 import { TEAM_METRICS } from '@/lib/stats'
-import type { Team, TeamStatLine } from '@/types/nfl'
+import type { TeamSeason, TeamStatLine } from '@/types/nfl'
 
 /** Derived from the frozen contract rather than re-declared alongside it. */
-type TeamStatsShape = Team['stats']
+type TeamStatsShape = TeamSeason['stats']
 
 function Panel({
   title,

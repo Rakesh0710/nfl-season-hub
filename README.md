@@ -28,20 +28,20 @@ person came for: the shape of a game.
 A static site that takes a visitor from all 32 teams down to a single play in three clicks, and
 then plays the game back to them.
 
-- **League dashboard** — 32 teams sortable by projected wins, last-season record or division, and
-  filterable by conference and division. The view lives in the URL, so a filtered dashboard is a
-  link you can send someone.
-- **Team page** — projected wins against last season's result, offensive and defensive splits,
-  depth chart, roster and draft class, and every game the team has played in six seasons, one
-  season at a time, each a route into its replay.
+- **League dashboard** — 32 teams in any of six seasons, sortable by expected wins, record or
+  division and filterable by conference and division. Season, sort and filters all live in the
+  URL, so a 2021 dashboard sorted by record is a link you can send someone.
+- **Team page** — one season, whole: that year's record against what the market expected of it,
+  offensive and defensive splits, depth chart, roster, draft class and games, each a route into
+  its replay. Change the season and the entire page changes with it.
 - **Game replay** — the flagship. The home team's win probability animates across the game one
   play at a time on an HTML canvas, with the plays the ETL flagged as decisive marked along the
   timeline, a scrubber to drag, and a context box that always says where the game stands.
 - **Compare** — any two teams on one shared scale, offense and defense, with every game they have
   played since 2020 and the series record, each meeting linking to its replay.
 - **Players** — search 2,274 profiles by name, team or position, then a page with bio, headshot,
-  season stats, a week-by-week trend that opens each game's replay, and a season-by-season career
-  table.
+  a season's stats, that season week by week with each game opening its replay, and a
+  season-by-season career table spanning the whole dataset.
 
 ## Demo
 
@@ -90,7 +90,7 @@ _(Screenshots are captured from the production build by Playwright; see
     etl/build_data.py — run once, locally, by hand
                         │
                         ▼
-             Typed static JSON  ×1,730
+             Typed static JSON  ×4,166
   meta · teams-index · games-index · team/<ID> · game/<GAME_ID>
                         │
               etl/validate.py enforces the contract
@@ -156,27 +156,54 @@ preview` reads no `vercel.json` — and was only caught by curling the deploymen
 
 ## Data model
 
-Seven file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
+Eight file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
 
-| File                  | Count | Size (raw / gzip)    | Contents                                                             |
-| --------------------- | ----: | -------------------- | -------------------------------------------------------------------- |
-| `meta.json`           |     1 | 0.5 KB               | when the data was generated, and how complete each season is         |
-| `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection                 |
-| `games-index.json`    |     1 | 239 KB / 26 KB       | 1,695 games: ids, dates, scores, type (not yet fetched)              |
-| `team/<ID>.json`      |    32 | 38 KB / 5.9 KB       | roster, depth chart, draft class, splits, ~105 games                 |
-| `game/<GAME_ID>.json` | 1,695 | 45.9 KB / **6.6 KB** | every play: clock, score, down, description, win prob                |
-| `player/<ID>.json`    | 2,274 | 1.5 KB / 0.5 KB      | bio, headshot, career seasons, and the displayed season week by week |
-| `players-index.json`  |     1 | 394 KB / 73 KB       | the search index: name, position, team, headshot, career games       |
+| File                      | Count | Size (raw / gzip)    | Contents                                                                                      |
+| ------------------------- | ----: | -------------------- | --------------------------------------------------------------------------------------------- |
+| `meta.json`               |     1 | 0.6 KB / 0.2 KB      | when the data was generated, how complete each season is, and which seasons have a team layer |
+| `teams-index.json`        |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection                                          |
+| `standings.json`          |     1 | 21 KB / **2.6 KB**   | 192 rows: every team's record and expected wins, every season                                 |
+| `games-index.json`        |     1 | 239 KB / 26 KB       | 1,695 games: ids, dates, scores, type                                                         |
+| `team/<season>/<ID>.json` |   192 | 23 KB / 3.8 KB       | one team in one season: record, roster, depth chart, draft class, splits, games               |
+| `game/<GAME_ID>.json`     | 1,695 | 45.9 KB / **6.6 KB** | every play: clock, score, down, description, win prob                                         |
+| `player/<ID>.json`        | 2,274 | 4.3 KB / 0.9 KB      | bio, headshot, career seasons, every season week by week                                      |
+| `players-index.json`      |     1 | 394 KB / 73 KB       | the search index: name, position, team, headshot, career games                                |
 
 A game averages 6.6 KB over the wire, which is why a replay can load on demand with no backend.
 
-A team file carries **every** season's games — about 105, not the 17 of one season — while the
-rest of it describes a single season. That asymmetry is deliberate: the replays are the point of
-the site and the team page is the way in. When this field held one season, 1,409 of the 1,694
-replays shipped at the time had no route to them from anywhere in the UI; the only way to a 2021 game was a
-head-to-head list on the comparison page. Widening it costs **2.0 KB gzipped per team file** and
-makes all of them reachable in two clicks. Fetching `games-index.json` on the team page instead
-would have cost 27 KB for the same result.
+### Six seasons, one file at a time
+
+The dataset always held six seasons of replays. Everything around them described one: the
+dashboard, the rosters, the stat lines, the records were all the newest season, so the only way to
+look at the 2020 Chiefs was to read their 2020 scores underneath their 2025 squad.
+
+The team layer is now **one file per team per season** — 192 of them where there were 32. A
+visitor still fetches exactly one, and it got _smaller_ — 5.9 KB gzipped to 3.8 KB — because it no
+longer has to carry six seasons of games to make them reachable from a single page. Gzipped file
+sizes, excluding `meta.json`, which the footer fetches on every page either way:
+
+| Page                  | Fetches                     | Before | After                       |
+| --------------------- | --------------------------- | -----: | --------------------------- |
+| League dashboard      | teams-index (+ standings)   | 1.4 KB | **4.0 KB**, all six seasons |
+| Changing season on it | nothing                     |      — | **0 bytes** — a re-render   |
+| Team page             | teams-index + the team file | 7.3 KB | **5.2 KB**                  |
+| Player page           | teams-index + the profile   | 1.9 KB | **2.3 KB**                  |
+
+The player profile is an average; six seasons of weekly logs cost about 0.4 KB gzipped. Mahomes,
+who has played every season in the dataset, is the outlier at 3.7 KB.
+
+The repository grew from 90 MB to 99 MB, which is the part that actually costs something — though
+79 MB of it was replays before any of this.
+
+`standings.json` is a new file rather than three more fields on `teams-index.json`. The dashboard's
+whole appeal is that sorting and filtering never touch the network, and a season switch had to
+work the same way, which means holding every season at once — 2.6 KB for all 192 rows. Putting
+that on `teams-index.json` would have charged the comparison page and every team page for it too.
+
+The per-season file is deliberately **not** a `TeamSummary` with extra fields. That interface
+carries `lastSeason` and `projectedWins`, both relative to now; a season page wants that season's
+record and what the market expected of it. Same numbers, different question, so `TeamSeason` is
+its own contract and the index is untouched.
 
 Counts here are from the last refresh and grow while a season is being played — `meta.json` is the
 source of truth for what is actually shipped. The six completed seasons never change.
@@ -194,7 +221,7 @@ curve and the markers on the timeline can never come to mean different things.
 
 ### Validation happens twice, from both sides
 
-[`etl/validate.py`](etl/validate.py) checks all 1,730 generated files against the contract from
+[`etl/validate.py`](etl/validate.py) checks all 4,166 generated files against the contract from
 the producing side, and is itself verified by fault injection. It caught four real defects:
 non-chronological `play_id`, timeout rows carrying stale scores, playoff games inflating
 per-game rates, and a 2025 depth-chart schema change upstream.
@@ -312,26 +339,27 @@ any other origin passes through untouched.
 ## Testing
 
 ```
-357 unit and component tests   20 files   Vitest + React Testing Library
- 31 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
+381 unit and component tests   20 files   Vitest + React Testing Library
+ 37 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
 ```
 
 The tests are aimed at behaviour that could plausibly break, not at a coverage number.
 
-| Area                     | What is actually asserted                                                                                                                                                            |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| League sorting/filtering | every sort key and direction, the name tiebreak, immutability of the input, contradictory URL params                                                                                 |
-| URL state                | round-trips, unknown values falling back, a division that contradicts its conference losing                                                                                          |
-| Data layer               | 404 → not-found, HTML-with-a-200 → not-found, truncated JSON → malformed, contract violation → malformed                                                                             |
-| Request cache            | concurrent callers share one fetch, failures are evicted and retryable                                                                                                               |
-| Contract                 | the real generated files parse; each failure mode names its path; extra fields are tolerated                                                                                         |
-| Replay control state     | seek-while-paused stays paused, seek-while-playing continues, Play rewinds a finished replay but resume does not, no two loops ever run, the frame handle is cancelled on unmount    |
-| Frame pacing             | a 120-second frame (a backgrounded tab) advances 0.8 of a play, not the whole game                                                                                                   |
-| Canvas drawing           | `indexAtOffset` inverts `xForIndex` for every play at three widths; beads appear only once passed; a non-finite cursor still draws                                                   |
-| Colour                   | all 32 real team colours clear 3:1 on the card and on the bar track, and AA as badge text                                                                                            |
-| Comparison               | the leader is inverted for defensive metrics, an exact tie names no one, meetings are symmetric in their arguments and never include a third team, and the two series records mirror |
-| Components               | loading, error, retry, empty and not-found states; keyboard operation of the whole transport                                                                                         |
-| Player search            | ranking tiers and the namesake tiebreak against the real index; accented names typed plainly; the URL restoring box, filters and results; both headshot delivery types resized       |
+| Area                     | What is actually asserted                                                                                                                                                                                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| League sorting/filtering | every sort key and direction, the name tiebreak, immutability of the input, contradictory URL params                                                                                                                                                                                   |
+| URL state                | round-trips, unknown values falling back, a division that contradicts its conference losing                                                                                                                                                                                            |
+| Data layer               | 404 → not-found, HTML-with-a-200 → not-found, truncated JSON → malformed, contract violation → malformed                                                                                                                                                                               |
+| Request cache            | concurrent callers share one fetch, failures are evicted and retryable                                                                                                                                                                                                                 |
+| Contract                 | the real generated files parse; each failure mode names its path; extra fields are tolerated                                                                                                                                                                                           |
+| Replay control state     | seek-while-paused stays paused, seek-while-playing continues, Play rewinds a finished replay but resume does not, no two loops ever run, the frame handle is cancelled on unmount                                                                                                      |
+| Frame pacing             | a 120-second frame (a backgrounded tab) advances 0.8 of a play, not the whole game                                                                                                                                                                                                     |
+| Canvas drawing           | `indexAtOffset` inverts `xForIndex` for every play at three widths; beads appear only once passed; a non-finite cursor still draws                                                                                                                                                     |
+| Colour                   | all 32 real team colours clear 3:1 on the card and on the bar track, and AA as badge text                                                                                                                                                                                              |
+| Comparison               | the leader is inverted for defensive metrics, an exact tie names no one, meetings are symmetric in their arguments and never include a third team, and the two series records mirror                                                                                                   |
+| Components               | loading, error, retry, empty and not-found states; keyboard operation of the whole transport                                                                                                                                                                                           |
+| Player search            | ranking tiers and the namesake tiebreak against the real index; accented names typed plainly; the URL restoring box, filters and results; both headshot delivery types resized                                                                                                         |
+| Six seasons              | the standings join drops a team with no row for that year rather than showing it 0-0; a season only reaches the URL when it is not the default; the team page fetches the season it was asked for and falls back for one with no layer; the dashboard changes season without a request |
 
 Two examples of tests that exist because the bug happened:
 
@@ -354,7 +382,7 @@ for.
 
 | Job      | Steps                                                                                     |
 | -------- | ----------------------------------------------------------------------------------------- |
-| `verify` | `npm ci` → typecheck → lint → format check → 357 tests → production build → bundle report |
+| `verify` | `npm ci` → typecheck → lint → format check → 381 tests → production build → bundle report |
 | `data`   | `etl/validate.py` against the committed JSON (stdlib only; no ETL run needed)             |
 | `e2e`    | Playwright against the built app, report uploaded as an artifact                          |
 
@@ -431,10 +459,14 @@ gzipped:
 
 | Route       | JavaScript |    Data | Motion runtime |
 | ----------- | ---------: | ------: | -------------- |
-| `/`         |  113.5 KiB | 1.4 KiB | yes            |
+| `/`         |  113.5 KiB | 4.1 KiB | yes            |
 | `/team/:id` |  116.9 KiB | 5.5 KiB | yes            |
 | `/compare`  |   90.5 KiB | 1.4 KiB | **no**         |
 | `/game/:id` |   92.3 KiB | 6.6 KiB | **no**         |
+
+The dashboard's 4.1 KiB is `teams-index.json` plus the 2.7 KiB of standings that buy all six
+seasons; every season after the first costs nothing, because changing one is a re-render. A team
+page is `teams-index.json` plus one 4.1 KiB team-season file.
 
 A loaded comparison adds 35 KiB of data on top — two team files and the 27 KiB game index — and
 `GamePage` appears on no other route's list. The replay engine is downloaded when, and only when, someone
@@ -501,7 +533,7 @@ npm run dev            # http://localhost:5173
 npm run typecheck      # tsc -b, four projects: app, node, tests, e2e
 npm run lint           # oxlint
 npm run format         # prettier --write .
-npm test               # Vitest, 357 tests
+npm test               # Vitest, 381 tests
 npm run test:coverage  # with a v8 coverage report
 npm run e2e            # Playwright (builds and serves the app itself)
 npm run build          # typecheck + production build
@@ -529,6 +561,16 @@ say which names lead somewhere.
 Which numbers a page shows is decided by which numbers exist, never by the position in the file.
 Mahomes' 2025 line contains one tackle and one reception; a page that branched on "quarterback"
 would have hidden both, and would have been wrong for every two-way player in the league.
+
+**One season at a time, except where the long view is the point.** A profile carries every
+season's weekly rows — a hundred bars for a six-season career, which is not a chart — so the
+season control governs the stat groups and the weekly trend together, and the career table below
+them deliberately stays whole. Six seasons of weekly logs cost about 0.4 KB gzipped per player,
+which is the cheapest thing in this repository by some margin.
+
+A roster from 2020 is full of players who have since retired and have no profile. They are named
+and not linked, the same rule the linemen fall under: `hasProfile` is written into every season's
+roster, so a link only ever points at a page that exists.
 
 **Finding them.** The profiles shipped before a way in did, reachable only by opening a team and
 scrolling to its fourth section — two thousand pages behind a path nobody would guess. `/players`
@@ -587,10 +629,13 @@ Tuesday 09:00 UTC (or a manual run)
 
 ### Only the newest season is rebuilt
 
-A full build re-derives six seasons and rewrites 1,727 files. A refresh rebuilds
-the newest season and **merges** it into the committed index, so finished
-seasons come out byte-identical. Run against the live 2026 season it touched
-three files:
+A full build re-derives six seasons and rewrites every one of the 4,166 files. A
+refresh rebuilds the newest season and **merges** it into the committed index,
+so finished seasons come out byte-identical. It rebuilds the team layer only
+for the seasons whose play-by-play it downloaded: a completed season's roster,
+draft class and stat lines never change again, so rewriting them weekly would
+be churn with no content. Run against the live 2026 season it touched three
+files:
 
 ```
 Refresh: rebuilding 2026 only, merging into 1693 indexed games
@@ -631,11 +676,18 @@ data was generated and how far through each season it is:
   "generatedAt": "2026-09-11T05:54:49Z",
   "displaySeason": 2025,
   "latestSeason": 2026,
+  "teamSeasons": [2020, 2021, 2022, 2023, 2024, 2025],
   "seasons": [{ "season": 2026, "scheduled": 272, "played": 2, "complete": false }]
 }
 ```
 
-Three things read it:
+`teamSeasons` is the same promotion rule applied to _which_ seasons the site
+offers, not just which one it opens on. 2026 has a schedule and two replays but
+no squad worth describing, so it gets no team layer, no standings rows and no
+place on the season control — and `validate.py` fails if a season directory
+exists that this list does not name, or if the list names one that is missing.
+
+Four things read it:
 
 - **Every footer**: `Refreshed 4 minutes ago — 2026-09-11. Seasons 2020–2026.`
   The wording is deliberately coarse; the exact instant is on the `<time>`
@@ -649,6 +701,12 @@ Three things read it:
 - **Team stat panels**: "From 1,048 regular-season scrimmage plays in 2025."
   These are season-shaped figures and a reader who assumes they are this week's
   is reading them wrong.
+- **The team page**, for the seasons its control offers and the one to open on.
+  The league dashboard deliberately does not: its seasons come from
+  `standings.json`, the data it is actually showing, so aborting `meta.json`
+  leaves the whole dashboard working. An end-to-end test aborts that request
+  and asserts exactly that — it caught this regression the day the season
+  control was added, when the dashboard briefly could not render without it.
 
 If `--display-season` is used to force an unfinished season, the notice changes
 to say so outright — "2026 so far, 2 of 272 games played, so they are a partial
@@ -724,9 +782,9 @@ appear here for identification only.
   grouping plays into drives would let the replay skip forward a drive at a time, which is closer
   to how people actually talk about a game.
 - **Search across all 1,695 games** — by team, week, margin, or "games that swung more than 60
-  points". `games-index.json` already exists, is validated, and has a typed accessor; no page
-  loads it yet, because a team's own games travel inside its team file. At 27 KB gzipped this is
-  a filter over one fetch, not a backend.
+  points". `games-index.json` already exists, is validated, and has a typed accessor; only the
+  comparison page loads it, because a team's own season of games travels inside its team file. At
+  27 KB gzipped this is a filter over one fetch, not a backend.
 - **Precompute the replay's per-play deltas in the ETL** so the client stops recomputing the
   chart series on every mount. Currently 0.05 ms for a typical game, so this is a correctness-of-
   ownership argument rather than a performance one.

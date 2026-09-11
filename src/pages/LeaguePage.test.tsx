@@ -12,15 +12,23 @@ import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import LeaguePage from '@/pages/LeaguePage'
 import { DataError } from '@/lib/data'
-import { makeLeague } from '@/test/fixtures'
+import { makeLeague, makeMeta, makeStandings } from '@/test/fixtures'
 
 vi.mock('@/lib/data', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/data')>()),
   getTeamsIndex: vi.fn(),
+  getStandings: vi.fn(),
+  getMeta: vi.fn(),
 }))
 
-const { getTeamsIndex } = await import('@/lib/data')
+const { getTeamsIndex, getStandings, getMeta } = await import('@/lib/data')
 const mockedIndex = vi.mocked(getTeamsIndex)
+const mockedStandings = vi.mocked(getStandings)
+const mockedMeta = vi.mocked(getMeta)
+
+/** Every season the fixtures cover, so the season control has options. */
+const SEASONS = [2020, 2021, 2022, 2023, 2024, 2025]
+const allStandings = () => SEASONS.flatMap((season) => makeStandings(season))
 
 function mount(url = '/') {
   return render(
@@ -39,6 +47,10 @@ function renderedTeams(): string[] {
 
 beforeEach(() => {
   mockedIndex.mockReset()
+  mockedStandings.mockReset()
+  mockedMeta.mockReset()
+  mockedStandings.mockResolvedValue(allStandings())
+  mockedMeta.mockResolvedValue(makeMeta({ teamSeasons: SEASONS }))
 })
 
 describe('loading and failure', () => {
@@ -97,7 +109,7 @@ describe('the loaded dashboard', () => {
     mount()
     await screen.findByRole('heading', { level: 1, name: 'League' })
 
-    await userEvent.click(screen.getByRole('button', { name: /last-season record/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Record' }))
     await waitFor(() => expect(renderedTeams()[0]).toContain('Bills'))
     expect(mockedIndex).toHaveBeenCalledTimes(1)
   })
@@ -105,10 +117,10 @@ describe('the loaded dashboard', () => {
   it('flips direction when the active sort is pressed again', async () => {
     mount()
     await screen.findByRole('heading', { level: 1, name: 'League' })
-    const projected = screen.getByRole('button', { name: /projected wins/i })
-    expect(projected).toHaveAttribute('aria-pressed', 'true')
+    const expected = screen.getByRole('button', { name: 'Expected wins' })
+    expect(expected).toHaveAttribute('aria-pressed', 'true')
 
-    await userEvent.click(projected)
+    await userEvent.click(expected)
     await waitFor(() => expect(renderedTeams()[0]).toContain('Giants'))
   })
 
@@ -151,17 +163,14 @@ describe('the loaded dashboard', () => {
     mount('/?conf=NFC&div=NFC+East&sort=record')
     await screen.findByRole('heading', { level: 1, name: 'League' })
     await waitFor(() => expect(renderedTeams()).toHaveLength(2))
-    expect(screen.getByRole('button', { name: /last-season record/i })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
+    expect(screen.getByRole('button', { name: 'Record' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('falls back to the default view for a nonsense query string', async () => {
     mount('/?sort=elo&conf=XFL&div=Pacific')
     await screen.findByRole('heading', { level: 1, name: 'League' })
     expect(renderedTeams()).toHaveLength(8)
-    expect(screen.getByRole('button', { name: /projected wins/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Expected wins' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
@@ -179,12 +188,76 @@ describe('the loaded dashboard', () => {
     await waitFor(() => expect(renderedTeams()).toHaveLength(4))
   })
 
+  it('offers every season with a team layer, newest first', async () => {
+    mount()
+    await screen.findByRole('heading', { level: 1, name: 'League' })
+    const tabs = screen.getByRole('group', { name: 'Season' })
+    expect(
+      within(tabs)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['2025', '2024', '2023', '2022', '2021', '2020'])
+    expect(within(tabs).getByRole('button', { name: '2025' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('changes season without going back to the network', async () => {
+    // The whole point of holding every season's standings at once: 2.6 KB
+    // bought the switch, so pressing 2021 must not cost a request.
+    mount()
+    await screen.findByRole('heading', { level: 1, name: 'League' })
+    const before = mockedStandings.mock.calls.length + mockedIndex.mock.calls.length
+
+    await userEvent.click(within(screen.getByRole('group', { name: 'Season' })).getByText('2021'))
+
+    await waitFor(() => expect(renderedTeams()).toHaveLength(8))
+    expect(mockedStandings.mock.calls.length + mockedIndex.mock.calls.length).toBe(before)
+  })
+
+  it('announces the season, because it rewrites every number below it', async () => {
+    mount()
+    await screen.findByRole('heading', { level: 1, name: 'League' })
+    const summary = screen.getByRole('heading', { level: 2 })
+    expect(summary).not.toHaveTextContent('2021')
+
+    await userEvent.click(within(screen.getByRole('group', { name: 'Season' })).getByText('2021'))
+    await waitFor(() => expect(summary).toHaveTextContent('in 2021'))
+  })
+
+  it('restores a season from the query string, and keeps the filters with it', async () => {
+    mount('/?season=2021&conf=AFC')
+    await screen.findByRole('heading', { level: 1, name: 'League' })
+    expect(renderedTeams()).toHaveLength(4)
+    expect(
+      within(screen.getByRole('group', { name: 'Season' })).getByRole('button', { name: '2021' }),
+    ).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('keeps the season when the filters are cleared', async () => {
+    // Clearing a filter is not the same gesture as going back to this year.
+    mockedIndex.mockResolvedValue(makeLeague().filter((team) => team.conference === 'NFC'))
+    mount('/?season=2021')
+    await screen.findByRole('heading', { level: 1, name: 'League' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'AFC' }))
+    await screen.findByText('No teams match these filters.')
+    await userEvent.click(screen.getByRole('button', { name: /clear filters/i }))
+
+    await waitFor(() => expect(renderedTeams()).toHaveLength(4))
+    expect(
+      within(screen.getByRole('group', { name: 'Season' })).getByRole('button', { name: '2021' }),
+    ).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('links each team to its own page', async () => {
     mount()
     await screen.findByRole('heading', { level: 1, name: 'League' })
+    // The season travels with the link, so a 2021 card opens the 2021 page.
     expect(screen.getByRole('link', { name: /Kansas City Chiefs/ })).toHaveAttribute(
       'href',
-      '/team/KC',
+      '/team/KC?season=2025',
     )
   })
 })
