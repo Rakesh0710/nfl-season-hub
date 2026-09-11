@@ -109,3 +109,31 @@ body {
     transform: none;
   }
 }
+
+/*
+ * A comparison bar arriving.
+ *
+ * `scaleX` rather than an animated width: it runs on the compositor, and the
+ * final width is already in the style attribute, so nothing has to know the
+ * value in advance. The origin is the end the bar grows from — the left edge,
+ * or the zero line on a scale that spans it.
+ *
+ * CSS rather than the motion runtime, for the reason the page transition is
+ * also CSS: this component is shared with the League and Team chunks, and one
+ * bar animation is not worth putting a 14 kB library in front of three routes.
+ * With reduced motion there is simply no animation, and the bar is drawn.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .bar-grow {
+    animation: bar-grow 0.5s ease-out both;
+  }
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}

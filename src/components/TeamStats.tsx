@@ -2,37 +2,19 @@
  * Offense and defense stat lines.
  *
  * A team file carries only its own numbers, so there is no league distribution
- * to rank against. Each bar therefore uses a fixed, printed scale chosen to
- * span the realistic range, and the defensive panel says outright that lower
- * is better — otherwise a long bar would read as good on both sides.
+ * to rank against. Each bar therefore uses a fixed, printed scale (defined once
+ * in `lib/stats.ts`, so the comparison page cannot disagree with this one), and
+ * the defensive panel says outright that lower is better — otherwise a long bar
+ * would read as good on both sides. To read these against another team rather
+ * than against the scale, /compare puts two of them on one axis.
  */
 
-import { num, percent } from '@/lib/football'
 import StatBar from '@/components/StatBar'
+import { TEAM_METRICS } from '@/lib/stats'
 import type { Team, TeamStatLine } from '@/types/nfl'
 
 /** Derived from the frozen contract rather than re-declared alongside it. */
 type TeamStatsShape = Team['stats']
-
-type Metric = {
-  key: keyof TeamStatLine
-  label: string
-  domain: [number, number]
-  format: (v: number) => string
-}
-
-const METRICS: Metric[] = [
-  { key: 'epaPerPlay', label: 'EPA per play', domain: [-0.25, 0.25], format: (v) => v.toFixed(3) },
-  { key: 'pointsPerGame', label: 'Points per game', domain: [0, 35], format: (v) => num(v, 1) },
-  { key: 'yardsPerGame', label: 'Yards per game', domain: [0, 450], format: (v) => num(v, 0) },
-  { key: 'successRate', label: 'Success rate', domain: [0.3, 0.55], format: (v) => percent(v, 1) },
-  {
-    key: 'explosiveRate',
-    label: 'Explosive rate',
-    domain: [0, 0.12],
-    format: (v) => percent(v, 1),
-  },
-]
 
 function Panel({
   title,
@@ -56,7 +38,7 @@ function Panel({
       ) : (
         <>
           <div className="mt-2 divide-y divide-neutral-800/60">
-            {METRICS.map((metric) => (
+            {TEAM_METRICS.map((metric) => (
               <StatBar
                 key={metric.key}
                 label={metric.label}

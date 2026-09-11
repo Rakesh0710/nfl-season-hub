@@ -61,20 +61,28 @@ export default function TeamPage() {
 
         <TeamHeader team={team} />
 
-        <nav
-          aria-label="Sections"
-          className="flex flex-wrap gap-1 border-y border-neutral-800 py-2"
-        >
-          {SECTIONS.map((section) => (
-            <a
-              key={section.id}
-              href={`#${section.id}`}
-              className="rounded-md px-3 py-1.5 text-sm text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
-            >
-              {section.label}
-            </a>
-          ))}
-        </nav>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-y border-neutral-800 py-2">
+          <nav aria-label="Sections" className="flex flex-wrap gap-1">
+            {SECTIONS.map((section) => (
+              <a
+                key={section.id}
+                href={`#${section.id}`}
+                className="rounded-md px-3 py-1.5 text-sm text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+              >
+                {section.label}
+              </a>
+            ))}
+          </nav>
+          {/* The stat bars below are drawn against a printed scale because a
+              team file has no league distribution in it. This is the way to
+              give them a second team to be read against. */}
+          <Link
+            to={`/compare?a=${team.id}`}
+            className="rounded-md border border-neutral-700 px-3 py-1.5 text-sm font-medium text-neutral-300 transition-colors hover:border-neutral-500 hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+          >
+            Compare {team.id}
+          </Link>
+        </div>
 
         <Section id="games" title="Games">
           <GamesList games={team.games} teamId={team.id} teamsById={teamsById} />

@@ -85,3 +85,70 @@ export function GameSkeleton() {
     </Shell>
   )
 }
+
+export function CompareSkeleton({ matchup = false }: { matchup?: boolean }) {
+  return (
+    <Shell label="Loading the comparison">
+      <Bar className="h-8 w-40" />
+      <Bar className="mt-3 h-4 w-full max-w-md" />
+      {/* The two pickers, which appear before either team is chosen and are
+          the only part of this page that is always present. */}
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <Bar className="h-10 flex-1" />
+        <Bar className="h-10 flex-1" />
+      </div>
+      {matchup ? <MatchupShapes /> : <Bar className="mt-6 h-40 w-full" />}
+    </Shell>
+  )
+}
+
+/**
+ * The comparison itself, waiting for two team files and the game index.
+ *
+ * Sized from the real thing rather than sketched: an identity card is 77px, a
+ * metric block 118px, and a stat panel is five of them. A one-line "loading"
+ * here instead measured a cumulative layout shift of 0.617 when 2,394px of
+ * comparison landed on top of it — six times the threshold for "good", and by
+ * some distance the worst number this project has measured.
+ */
+function MatchupShapes() {
+  return (
+    <div className="mt-6 space-y-8">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Bar className="h-[77px]" />
+        <Bar className="h-[77px]" />
+      </div>
+      {['offense', 'defense'].map((unit) => (
+        <div key={unit}>
+          <Bar className="h-7 w-28" />
+          <div className="mt-2 rounded-xl border border-neutral-800 px-4 py-1">
+            {Array.from({ length: 5 }, (_, i) => (
+              <div key={i} className="py-3">
+                <Bar className="h-5 w-28" />
+                <div className="mt-2 space-y-1.5">
+                  <Bar className="h-5" />
+                  <Bar className="h-5" />
+                </div>
+                <Bar className="mt-1 h-4" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div>
+        <Bar className="h-7 w-36" />
+        <Bar className="mt-3 h-5 w-80 max-w-full" />
+        <Bar className="mt-3 h-80" />
+      </div>
+    </div>
+  )
+}
+
+/** Exported for the page, which shows it once the pickers are already drawn. */
+export function MatchupSkeleton() {
+  return (
+    <Shell label="Loading the matchup">
+      <MatchupShapes />
+    </Shell>
+  )
+}

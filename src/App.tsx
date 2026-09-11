@@ -12,6 +12,7 @@ import Layout from '@/components/Layout'
 const LeaguePage = lazy(() => import('@/pages/LeaguePage'))
 const TeamPage = lazy(() => import('@/pages/TeamPage'))
 const GamePage = lazy(() => import('@/pages/GamePage'))
+const ComparePage = lazy(() => import('@/pages/ComparePage'))
 
 function NotFound() {
   return (
@@ -35,6 +36,7 @@ export default function App() {
         <Route index element={<LeaguePage />} />
         <Route path="team/:id" element={<TeamPage />} />
         <Route path="game/:id" element={<GamePage />} />
+        <Route path="compare" element={<ComparePage />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

@@ -6,7 +6,7 @@
 
 import { Suspense } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { GameSkeleton, LeagueSkeleton, TeamSkeleton } from '@/components/Skeletons'
+import { CompareSkeleton, GameSkeleton, LeagueSkeleton, TeamSkeleton } from '@/components/Skeletons'
 
 function navClass({ isActive }: { isActive: boolean }) {
   return [
@@ -33,6 +33,9 @@ export default function Layout() {
           <nav aria-label="Main" className="flex items-center gap-1">
             <NavLink to="/" end className={navClass}>
               League
+            </NavLink>
+            <NavLink to="/compare" className={navClass}>
+              Compare
             </NavLink>
           </nav>
         </div>
@@ -102,8 +105,14 @@ function PageTransition({ children }: { children: React.ReactNode }) {
  * is coming.
  */
 function RouteSkeleton() {
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   if (pathname.startsWith('/game/')) return <GameSkeleton />
   if (pathname.startsWith('/team/')) return <TeamSkeleton />
+  if (pathname.startsWith('/compare')) {
+    // A link with both teams in it is going to render a full comparison, so
+    // reserve that shape rather than the pickers alone.
+    const params = new URLSearchParams(search)
+    return <CompareSkeleton matchup={params.has('a') && params.has('b')} />
+  }
   return <LeagueSkeleton />
 }

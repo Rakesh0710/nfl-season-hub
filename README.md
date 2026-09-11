@@ -36,6 +36,8 @@ then plays the game back to them.
 - **Game replay** — the flagship. The home team's win probability animates across the game one
   play at a time on an HTML canvas, with the plays the ETL flagged as decisive marked along the
   timeline, a scrubber to drag, and a context box that always says where the game stands.
+- **Compare** — any two teams on one shared scale, offense and defense, with every game they have
+  played since 2020 and the series record, each meeting linking to its replay.
 
 ## Demo
 
@@ -43,13 +45,17 @@ then plays the game back to them.
 every push. No backend, so there is nothing to wake up.
 
 Try: [the league dashboard](https://nfl-season-hub.vercel.app/), a
-[team page](https://nfl-season-hub.vercel.app/team/KC), or the replay of
+[team page](https://nfl-season-hub.vercel.app/team/KC), the replay of
 [the longest game in the dataset](https://nfl-season-hub.vercel.app/game/2022_15_IND_MIN) — 218
-plays into overtime, Vikings 39, Colts 36.
+plays into overtime, Vikings 39, Colts 36 — or
+[Chiefs against Bills](https://nfl-season-hub.vercel.app/compare?a=KC&b=BUF) side by side.
 
 | League dashboard     | Team page          |
 | -------------------- | ------------------ |
 | ![](docs/league.png) | ![](docs/team.png) |
+
+![Comparing Kansas City and Buffalo: two bars per metric on one shared scale, with the leader
+marked](docs/compare.png)
 
 _(Screenshots are captured from the production build by Playwright; see
 `docs/`. There is no recorded GIF of the replay — the animation is best seen by running it.)_
@@ -109,8 +115,9 @@ of football happens.
 
 ### Routing and data access
 
-Three routes — `/`, `/team/:id`, `/game/:id` — inside one shared layout, each page a lazy chunk,
-so a league visitor never downloads the replay engine.
+Four routes — `/`, `/team/:id`, `/game/:id`, `/compare` — inside one shared layout, each page a
+lazy chunk, so a league visitor never downloads the replay engine and a comparison downloads
+neither the replay engine nor the motion runtime.
 
 All data access goes through [src/lib/data.ts](src/lib/data.ts). Components never call `fetch`,
 never build a URL, and never see an untyped value. The cache stores the in-flight _promise_
@@ -378,20 +385,31 @@ more in blitting than it saved, and not done.
 ### Bundle
 
 ```
-index      265.52 kB   84.41 kB gzip   React, React Router, the shell — every page
-league      76.31 kB   26.67 kB gzip   Framer Motion — League and Team only
-CSS         29.92 kB    6.39 kB gzip
-GamePage    17.81 kB    6.27 kB gzip   the replay engine — only on a game page
-TeamPage    16.33 kB    4.76 kB gzip
-useAsync     7.68 kB    3.12 kB gzip   data layer + runtime contract
-LeaguePage   7.58 kB    2.66 kB gzip
-football     2.53 kB    1.25 kB gzip
+index               267.36 kB   84.78 kB gzip   React, React Router, the shell — every page
+features-animation   73.87 kB   25.80 kB gzip   Framer Motion — League and Team only
+CSS                  30.73 kB    6.51 kB gzip
+GamePage             17.85 kB    6.29 kB gzip   the replay engine — only on a game page
+TeamPage             16.48 kB    4.71 kB gzip
+ComparePage          10.61 kB    3.51 kB gzip
+LeaguePage            7.66 kB    2.70 kB gzip
+useAsync              7.38 kB    2.98 kB gzip   data layer + runtime contract
+football              2.53 kB    1.25 kB gzip
+league                2.41 kB    0.95 kB gzip
+stats, motion hook    0.85 kB    0.53 kB gzip
 ```
 
-**Lazy loading, verified from the network log rather than from the config:** loading the league
-dashboard makes 29 requests, four of them JavaScript — `index` (82 KiB), `league` (26 KiB),
-`LeaguePage` and `useAsync` (3 KiB each), 115 KiB in total — and neither `GamePage` nor
-`TeamPage`. The replay engine is downloaded when, and only when, someone
+**Lazy loading, verified from the network log rather than from the config.** Measured per route,
+gzipped:
+
+| Route       | JavaScript |    Data | Motion runtime |
+| ----------- | ---------: | ------: | -------------- |
+| `/`         |  113.5 KiB | 1.4 KiB | yes            |
+| `/team/:id` |  116.9 KiB | 5.5 KiB | yes            |
+| `/compare`  |   90.5 KiB | 1.4 KiB | **no**         |
+| `/game/:id` |   92.3 KiB | 6.6 KiB | **no**         |
+
+A loaded comparison adds 35 KiB of data on top — two team files and the 27 KiB game index — and
+`GamePage` appears on no other route's list. The replay engine is downloaded when, and only when, someone
 opens a game.
 
 **What the runtime contract costs.** Validating the largest file the app loads — the 239 KB,
