@@ -14,9 +14,24 @@ function Bar({ className }: { className: string }) {
   return <div aria-hidden className={`${BLOCK} ${className}`} />
 }
 
+/**
+ * Taller than the screen, on purpose.
+ *
+ * The footer is the element that actually shifts. The app shell is
+ * `min-h-dvh flex flex-col`, so while a skeleton is up the page is exactly one
+ * viewport tall and the footer sits at the bottom of it, visible; when the real
+ * content arrives — 2,009 px for the dashboard, 5,618 px for a team page at
+ * 1280x900 — the footer is pushed off and that displacement is the whole of the
+ * measured layout shift. On a phone the skeletons already overflow the fold,
+ * which is why mobile CLS was 0 and desktop was not.
+ *
+ * Reserving 120vh keeps the footer below the fold from the first frame. It is
+ * not a guess dressed up as a reservation: every route in this app loads to
+ * more than one screen.
+ */
 function Shell({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div role="status" aria-live="polite">
+    <div role="status" aria-live="polite" className="min-h-[120vh]">
       <span className="sr-only">{label}</span>
       {children}
     </div>
@@ -28,7 +43,9 @@ export function LeagueSkeleton() {
     <Shell label="Loading the league">
       <Bar className="h-8 w-44" />
       <Bar className="mt-3 h-4 w-full max-w-md" />
-      <Bar className="mt-6 h-12 w-full" />
+      {/* The season control: 42 px tall with 12 px beneath it. */}
+      <Bar className="mt-4 h-[42px] w-full max-w-md rounded-lg" />
+      <Bar className="mt-3 h-12 w-full" />
       <Bar className="mt-4 h-4 w-56" />
       <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {/* Twelve, not thirty-two: enough to fill the first screen at any width,
@@ -50,7 +67,8 @@ export function TeamSkeleton() {
   return (
     <Shell label="Loading the team">
       <Bar className="h-4 w-40" />
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-center">
+      <Bar className="mt-8 h-[42px] w-full max-w-md rounded-lg" />
+      <div className="mt-8 grid gap-5 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-center">
         <div className="flex items-center gap-4">
           <Bar className="h-16 w-16 rounded-full" />
           <div className="min-w-0 flex-1">
