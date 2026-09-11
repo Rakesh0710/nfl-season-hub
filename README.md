@@ -5,6 +5,9 @@ scrubbable, animated replay of how that game's win probability actually moved.
 
 **League → Team → Game → Replay.** 2020–2025. 1,693 games, 273,325 plays. No backend.
 
+[![CI](https://github.com/Rakesh0710/nfl-season-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/Rakesh0710/nfl-season-hub/actions/workflows/ci.yml)
+[![Live](https://img.shields.io/badge/live-nfl--season--hub.vercel.app-000?logo=vercel)](https://nfl-season-hub.vercel.app)
+
 ![The game replay: a win-probability curve for Vikings 39, Colts 36, with key plays marked along
 the timeline and the play context below it](docs/replay.png)
 
@@ -332,28 +335,28 @@ for.
 
 ## Performance
 
-Everything below is measured, not estimated. Lighthouse 13.4.1 against the production build served
-by `vite preview` on localhost, headless Chrome, desktop preset and the default mobile preset
-(4× CPU throttling, simulated slow 4G). Machine benchmark index 3035. Lighthouse is not a
-dependency of this project — it is run with `npx` when a measurement is wanted, so nobody pays
-21 MB of install for a number.
+Everything below is measured, not estimated. Lighthouse 13.4.1 against **the deployed site**,
+headless Chrome, desktop preset and the default mobile preset (4× CPU throttling, simulated slow
+4G). Machine benchmark index 3057. Lighthouse is not a dependency of this project — it is run
+with `npx` when a measurement is wanted, so nobody pays 21 MB of install for a number.
 
 | Page   | Form    | Perf | A11y | Best practices | SEO | FCP   | LCP   | TBT   | CLS   | Page weight |
 | ------ | ------- | ---: | ---: | -------------: | --: | ----- | ----- | ----- | ----- | ----------: |
-| League | desktop |  100 |  100 |            100 | 100 | 0.4 s | 0.4 s | 0 ms  | 0.046 |     262 KiB |
-| Team   | desktop |   99 |  100 |            100 | 100 | 0.4 s | 0.5 s | 0 ms  | 0.069 |     168 KiB |
-| Game   | desktop |  100 |  100 |            100 | 100 | 0.4 s | 0.7 s | 0 ms  | 0.005 |     122 KiB |
-| League | mobile  |   99 |  100 |            100 | 100 | 1.6 s | 2.0 s | 0 ms  | 0     |     219 KiB |
-| Team   | mobile  |   98 |  100 |            100 | 100 | 1.7 s | 2.0 s | 20 ms | 0     |     168 KiB |
-| Game   | mobile  |   99 |  100 |            100 | 100 | 1.6 s | 1.7 s | 0 ms  | 0.033 |     122 KiB |
+| League | desktop |  100 |  100 |            100 | 100 | 0.3 s | 0.4 s | 0 ms  | 0.046 |     265 KiB |
+| Team   | desktop |   99 |  100 |            100 | 100 | 0.4 s | 0.5 s | 0 ms  | 0.069 |     171 KiB |
+| Game   | desktop |  100 |  100 |            100 | 100 | 0.3 s | 0.3 s | 0 ms  | 0.005 |     124 KiB |
+| League | mobile  |  100 |  100 |            100 | 100 | 1.2 s | 1.4 s | 0 ms  | 0     |     222 KiB |
+| Team   | mobile  |  100 |  100 |            100 | 100 | 1.3 s | 1.7 s | 20 ms | 0     |     171 KiB |
+| Game   | mobile  |  100 |  100 |            100 | 100 | 1.2 s | 1.2 s | 0 ms  | 0.033 |     124 KiB |
 
-These are one run, and the run-to-run spread is worth stating rather than hiding: across two runs
-of the same build the scores moved by at most one point, game/desktop LCP sat between 0.4 s and
-0.7 s, and team/mobile between 2.0 s and 2.4 s. Reproduce with:
+The same build measured on `vite preview` over localhost scores one to two points lower on mobile
+(FCP 1.6 s rather than 1.2 s): the CDN's brotli and HTTP/2 are doing real work, and a local
+preview is the pessimistic reading rather than the flattering one. These are single runs — across
+repeats the scores moved by at most one point and LCP by up to 0.3 s. Reproduce either with:
 
 ```bash
-npm run build && npm run preview -- --port 4173
-npx lighthouse http://localhost:4173/ --preset=desktop --chrome-flags="--headless=new" --view
+npx lighthouse https://nfl-season-hub.vercel.app/ --preset=desktop --view
+npm run build && npm run preview -- --port 4173   # then point it at localhost:4173
 ```
 
 ### Frame rate
