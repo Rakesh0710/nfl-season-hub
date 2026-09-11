@@ -9,11 +9,12 @@ import {
   ContractError,
   parseGame,
   parseMeta,
+  parsePlayer,
   parseGamesIndex,
   parseTeam,
   parseTeamsIndex,
 } from '@/lib/contract'
-import type { Game, GameSummary, Meta, Team, TeamSummary } from '@/types/nfl'
+import type { Game, GameSummary, Meta, PlayerProfile, Team, TeamSummary } from '@/types/nfl'
 
 /** Root of the generated data, honouring Vite's base path. */
 const DATA_ROOT = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/data`
@@ -154,6 +155,11 @@ export function getTeam(id: string): Promise<Team> {
  */
 export function getGamesIndex(): Promise<GameSummary[]> {
   return request('games-index.json', parseGamesIndex)
+}
+
+/** One player's bio and career, for players the dataset records production for. */
+export function getPlayer(id: string): Promise<PlayerProfile> {
+  return request(`player/${encodeURIComponent(id)}.json`, parsePlayer)
 }
 
 /** One game, including the ordered plays the replay animates. */

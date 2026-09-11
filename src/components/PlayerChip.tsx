@@ -6,6 +6,7 @@
  * rendered as a placeholder, and the line degrades to just a name.
  */
 
+import { Link } from 'react-router-dom'
 import { NO_VALUE, statusLabel } from '@/lib/football'
 import type { Player } from '@/types/nfl'
 
@@ -40,7 +41,20 @@ export default function PlayerChip({
         {player.number !== undefined ? `#${player.number}` : ''}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="text-sm text-neutral-100">{player.name}</span>
+        {/* Linked only when a profile exists. The dataset records no
+            production for about a third of a roster — offensive linemen most
+            of all — and a page repeating this line with a photograph on it
+            would be a dead end dressed up as a destination. */}
+        {player.hasProfile ? (
+          <Link
+            to={`/player/${player.id}`}
+            className="rounded-sm text-sm text-neutral-100 underline decoration-neutral-700 underline-offset-2 transition-colors hover:decoration-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
+          >
+            {player.name}
+          </Link>
+        ) : (
+          <span className="text-sm text-neutral-100">{player.name}</span>
+        )}
         {details.length > 0 && (
           <span className="ml-2 text-xs break-words text-muted">{details.join(' · ')}</span>
         )}

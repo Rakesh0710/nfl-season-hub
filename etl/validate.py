@@ -48,6 +48,16 @@ PLAYER = {
     "id": (str, True), "name": (str, True), "position": (str, True),
     "number": (int, False), "age": (int, False),
     "college": (str, False), "status": (str, False),
+    # Present only when player/<id>.json exists, which is only for players the
+    # dataset records production for.
+    "hasProfile": (bool, False),
+}
+PLAYER_PROFILE = {
+    "id": (str, True), "name": (str, True), "position": (str, True),
+    "team": (str, True), "seasons": (list, True), "weeks": (list, True),
+    "headshot": (str, False), "number": (int, False), "age": (int, False),
+    "college": (str, False), "height": (int, False), "weight": (int, False),
+    "experience": (int, False), "draft": (dict, False),
 }
 DRAFT_PICK = {
     "round": (int, True), "pick": (int, True), "player": (str, True),
@@ -423,6 +433,53 @@ def main() -> int:
             if tf.stem not in (g.get("home"), g.get("away")):
                 fail(f"{where}: game {g.get('gameId')!r} does not involve this team")
 
+    # ---------- player layer ----------
+    # Every profile the rosters advertise must exist, and every profile must
+    # earn its page. A file with no recorded production would be the roster row
+    # this layer exists to go beyond.
+    player_dir = data / "player"
+    player_files = sorted(player_dir.glob("*.json")) if player_dir.exists() else []
+    player_ids = {f.stem for f in player_files}
+
+    advertised: set[str] = set()
+    for tf in sorted((data / "team").glob("*.json")):
+        team = load(tf)
+        for person in list(team.get("roster", [])) + [
+            p for group in team.get("depthChart", {}).values() for p in group
+        ]:
+            if person.get("hasProfile"):
+                advertised.add(person.get("id"))
+
+    for pid in sorted(advertised - player_ids):
+        fail(f"roster advertises a profile for {pid!r} but player/{pid}.json does not exist")
+
+    for pf in player_files:
+        where = f"player/{pf.stem}"
+        player = load(pf)
+        check_shape(where, player, PLAYER_PROFILE)
+        if player.get("id") != pf.stem:
+            fail(f"{where}: id {player.get('id')!r} does not match the filename")
+        if player.get("team") not in team_ids:
+            fail(f"{where}: team {player.get('team')!r} is not a known team")
+
+        seasons = player.get("seasons", [])
+        if not seasons:
+            fail(f"{where}: no seasons — a profile with no production is a roster row")
+        years = [s.get("season") for s in seasons]
+        if years != sorted(years):
+            fail(f"{where}: seasons are not in order")
+        for s in seasons:
+            if not s.get("stats"):
+                fail(f"{where}: {s.get('season')} has an empty stat line")
+            if not isinstance(s.get("games"), int) or s.get("games", 0) < 1:
+                fail(f"{where}: {s.get('season')} games {s.get('games')!r} is not a positive count")
+
+        for w in player.get("weeks", []):
+            if w.get("gameId") and w["gameId"] not in generated_ids:
+                fail(f"{where}: week {w.get('week')} references missing game {w['gameId']!r}")
+            if not w.get("stats"):
+                fail(f"{where}: week {w.get('week')} has an empty stat line")
+
     if errors:
         print(f"\nFAILED — {len(errors)} problem(s):")
         for e in errors[:40]:
@@ -432,7 +489,8 @@ def main() -> int:
         return 1
 
     print(
-        f"\nOK — 32 teams, {len(game_files)} games, {len(games_index)} indexed. "
+        f"\nOK — 32 teams, {len(game_files)} games, {len(games_index)} indexed, "
+        f"{len(player_files)} players. "
         "All checks pass; data matches the TypeScript contract."
     )
     return 0

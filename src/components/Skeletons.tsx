@@ -152,3 +152,26 @@ export function MatchupSkeleton() {
     </Shell>
   )
 }
+
+export function PlayerSkeleton() {
+  return (
+    <Shell label="Loading the player">
+      <Bar className="h-4 w-56" />
+      <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
+        <Bar className="size-24 shrink-0 rounded-full" />
+        <div className="min-w-0 flex-1">
+          <Bar className="h-5 w-40" />
+          <Bar className="mt-2 h-8 w-64 max-w-full" />
+          <Bar className="mt-2 h-4 w-52 max-w-full" />
+        </div>
+      </div>
+      <Bar className="mt-8 h-7 w-36" />
+      <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        <Bar className="h-40" />
+        <Bar className="h-40" />
+      </div>
+      <Bar className="mt-8 h-7 w-32" />
+      <Bar className="mt-3 h-72" />
+    </Shell>
+  )
+}

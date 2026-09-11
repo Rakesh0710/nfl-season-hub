@@ -23,6 +23,10 @@
 import type {
   Conference,
   Meta,
+  PlayerProfile,
+  PlayerSeason,
+  PlayerStatLine,
+  PlayerWeek,
   SeasonState,
   DraftPick,
   Game,
@@ -181,6 +185,7 @@ const player: Parser<Player> = (value, path) => {
     age: field(o, 'age', optional(number), path),
     college: field(o, 'college', optional(string), path),
     status: field(o, 'status', optional(string), path),
+    hasProfile: field(o, 'hasProfile', optional(boolean), path),
   }
 }
 
@@ -270,6 +275,97 @@ export const parseMeta: Parser<Meta> = (value, path) => {
     displaySeason: field(o, 'displaySeason', number, path),
     latestSeason: field(o, 'latestSeason', number, path),
     seasons: field(o, 'seasons', arrayOf(seasonState), path),
+  }
+}
+
+/**
+ * A stat line, read field by field rather than copied wholesale.
+ *
+ * Every one is optional and every one is checked, so a string where a number
+ * belongs names itself instead of reaching a chart as text.
+ */
+const playerStatLine: Parser<PlayerStatLine> = (value, path) => {
+  const o = object(value, path)
+  const n = (key: string) => field(o, key, optional(number), path)
+  return {
+    completions: n('completions'),
+    attempts: n('attempts'),
+    passingYards: n('passingYards'),
+    passingTds: n('passingTds'),
+    interceptions: n('interceptions'),
+    passingEpa: n('passingEpa'),
+    carries: n('carries'),
+    rushingYards: n('rushingYards'),
+    rushingTds: n('rushingTds'),
+    rushingEpa: n('rushingEpa'),
+    targets: n('targets'),
+    receptions: n('receptions'),
+    receivingYards: n('receivingYards'),
+    receivingTds: n('receivingTds'),
+    receivingEpa: n('receivingEpa'),
+    tackles: n('tackles'),
+    sacks: n('sacks'),
+    defInterceptions: n('defInterceptions'),
+    forcedFumbles: n('forcedFumbles'),
+    passesDefended: n('passesDefended'),
+    fgMade: n('fgMade'),
+    fgAtt: n('fgAtt'),
+    fgLong: n('fgLong'),
+    patMade: n('patMade'),
+    patAtt: n('patAtt'),
+  }
+}
+
+const playerSeason: Parser<PlayerSeason> = (value, path) => {
+  const o = object(value, path)
+  return {
+    season: field(o, 'season', number, path),
+    team: field(o, 'team', string, path),
+    games: field(o, 'games', number, path),
+    stats: field(o, 'stats', playerStatLine, path),
+  }
+}
+
+const playerWeek: Parser<PlayerWeek> = (value, path) => {
+  const o = object(value, path)
+  return {
+    season: field(o, 'season', number, path),
+    week: field(o, 'week', number, path),
+    opponent: field(o, 'opponent', string, path),
+    gameId: field(o, 'gameId', optional(string), path),
+    stats: field(o, 'stats', playerStatLine, path),
+  }
+}
+
+export const parsePlayer: Parser<PlayerProfile> = (value, path) => {
+  const o = object(value, path)
+  return {
+    id: field(o, 'id', string, path),
+    name: field(o, 'name', string, path),
+    position: field(o, 'position', string, path),
+    team: field(o, 'team', string, path),
+    headshot: field(o, 'headshot', optional(string), path),
+    number: field(o, 'number', optional(number), path),
+    age: field(o, 'age', optional(number), path),
+    college: field(o, 'college', optional(string), path),
+    height: field(o, 'height', optional(number), path),
+    weight: field(o, 'weight', optional(number), path),
+    experience: field(o, 'experience', optional(number), path),
+    draft: field(
+      o,
+      'draft',
+      optional((draftValue, draftPath) => {
+        const draft = object(draftValue, draftPath)
+        return {
+          year: field(draft, 'year', optional(number), draftPath),
+          pick: field(draft, 'pick', optional(number), draftPath),
+          club: field(draft, 'club', optional(string), draftPath),
+        }
+      }),
+      path,
+    ),
+    seasons: field(o, 'seasons', arrayOf(playerSeason), path),
+    weeks: field(o, 'weeks', arrayOf(playerWeek), path),
   }
 }
 

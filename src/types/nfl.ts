@@ -49,6 +49,16 @@ export interface Player {
   age?: number
   college?: string
   status?: string
+  /**
+   * Whether `player/<id>.json` exists for this person.
+   *
+   * Absent for the roughly a third of a roster the dataset records no
+   * production for — offensive linemen above all, whose contribution it simply
+   * does not measure. The UI links a name only when there is something behind
+   * it; a page repeating this row with a photograph on it would not be worth a
+   * route.
+   */
+  hasProfile?: boolean
 }
 
 export interface DraftPick {
@@ -159,6 +169,94 @@ export interface Game {
   away: GameTeam
   /** Chronological: quarter ascending, then game clock descending. */
   plays: GamePlay[]
+}
+
+/**
+ * One player's numbers, over a week or a whole season.
+ *
+ * Every field is optional and a zero is omitted, so a quarterback's line
+ * carries no tackle count and a cornerback's no completions. Reading it means
+ * asking what is present rather than filtering what is not.
+ */
+export interface PlayerStatLine {
+  completions?: number
+  attempts?: number
+  passingYards?: number
+  passingTds?: number
+  interceptions?: number
+  passingEpa?: number
+
+  carries?: number
+  rushingYards?: number
+  rushingTds?: number
+  rushingEpa?: number
+
+  targets?: number
+  receptions?: number
+  receivingYards?: number
+  receivingTds?: number
+  receivingEpa?: number
+
+  tackles?: number
+  sacks?: number
+  defInterceptions?: number
+  forcedFumbles?: number
+  passesDefended?: number
+
+  fgMade?: number
+  fgAtt?: number
+  /** The longest made kick, so this one is a maximum rather than a total. */
+  fgLong?: number
+  patMade?: number
+  patAtt?: number
+}
+
+/** A season of a player's career: who they played for, and what they did. */
+export interface PlayerSeason {
+  season: number
+  team: string
+  /** Games with a recorded stat line, which is not the same as games active. */
+  games: number
+  stats: PlayerStatLine
+}
+
+/** One week of the displayed season. */
+export interface PlayerWeek {
+  season: number
+  week: number
+  opponent: string
+  /** Present when the game has a replay to link to. */
+  gameId?: string
+  stats: PlayerStatLine
+}
+
+/**
+ * `player/<id>.json` — one per player with recorded production.
+ *
+ * Deliberately not one per rostered player. Of 3,135 players on a 2025 roster
+ * 1,115 have no stat row in any season, and a page for them would be their
+ * roster row with a photograph on it.
+ */
+export interface PlayerProfile {
+  id: string
+  name: string
+  position: string
+  team: string
+  headshot?: string
+  number?: number
+  age?: number
+  college?: string
+  /** Inches. */
+  height?: number
+  /** Pounds. */
+  weight?: number
+  /** Completed seasons in the league. */
+  experience?: number
+  draft?: { year?: number; pick?: number; club?: string }
+  /** Oldest first; only seasons with recorded production. */
+  seasons: PlayerSeason[]
+  /** The displayed season, week by week. Empty if they did not play in it. */
+  weeks: PlayerWeek[]
 }
 
 /** How far through a season the dataset is. One entry per season in `meta.json`. */

@@ -38,3 +38,25 @@ export function logoAt(url: string, cssPixels: number): string {
   const size = Math.round(cssPixels * MAX_DPR)
   return `${ESPN_ORIGIN}/combiner/i?img=${path}&w=${size}&h=${size}`
 }
+
+/** The NFL's image CDN, which serves the player headshots nflverse points at. */
+const NFL_IMAGES = 'https://static.www.nfl.com/image/upload/'
+
+/**
+ * A player headshot at the size it will be drawn.
+ *
+ * The same problem as the team logos, an order of magnitude worse: the stored
+ * headshots are 3-6 MB PNGs. One of them is larger than every JavaScript
+ * chunk, every stylesheet and every data file this site serves, combined.
+ *
+ * They sit on Cloudinary behind a `f_auto,q_auto` transformation, and adding a
+ * width to it resizes on their CDN: measured across four players, 3-5 MB
+ * becomes 6 KB at 160px and 20 KB at 320px. Anything not on that CDN, or not
+ * carrying the transformation this appends to, is returned untouched.
+ */
+export function headshotAt(url: string, cssPixels: number): string {
+  const marker = `${NFL_IMAGES}f_auto,q_auto/`
+  if (!url.startsWith(marker)) return url
+  const width = Math.round(cssPixels * MAX_DPR)
+  return `${NFL_IMAGES}f_auto,q_auto,w_${width}/${url.slice(marker.length)}`
+}

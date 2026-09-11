@@ -6,7 +6,13 @@
 
 import { lazy, Suspense } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
-import { CompareSkeleton, GameSkeleton, LeagueSkeleton, TeamSkeleton } from '@/components/Skeletons'
+import {
+  CompareSkeleton,
+  GameSkeleton,
+  LeagueSkeleton,
+  PlayerSkeleton,
+  TeamSkeleton,
+} from '@/components/Skeletons'
 
 // Lazy, so the data layer stays out of the entry chunk for a footer note.
 const DataFreshness = lazy(() => import('@/components/DataFreshness'))
@@ -116,6 +122,7 @@ function RouteSkeleton() {
   const { pathname, search } = useLocation()
   if (pathname.startsWith('/game/')) return <GameSkeleton />
   if (pathname.startsWith('/team/')) return <TeamSkeleton />
+  if (pathname.startsWith('/player/')) return <PlayerSkeleton />
   if (pathname.startsWith('/compare')) {
     // A link with both teams in it is going to render a full comparison, so
     // reserve that shape rather than the pickers alone.

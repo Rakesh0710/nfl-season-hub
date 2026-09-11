@@ -293,12 +293,14 @@ def build_stat_lines(pbp: pl.DataFrame, records: dict[str, dict]) -> dict[str, d
 # rosters, depth charts, draft
 # --------------------------------------------------------------------------
 
-def build_rosters(season: int) -> tuple[dict[str, list[dict]], dict[str, dict]]:
+def build_rosters(season: int) -> tuple[dict[str, list[dict]], dict[str, dict], pl.DataFrame]:
     """
-    Returns (players by team, players by nflverse id).
+    Returns (players by team, players by nflverse id, the raw roster frame).
 
     The id index lets the depth chart reuse full Player objects instead of
-    re-deriving a thinner copy of the same person.
+    re-deriving a thinner copy of the same person. The frame goes to the player
+    builder, which needs the columns a roster row does not carry — headshot,
+    height, weight, draft position — without downloading the rosters twice.
     """
     rosters = nfl.load_rosters(seasons=[season])
     by_team: dict[str, list[dict]] = {}
@@ -325,7 +327,7 @@ def build_rosters(season: int) -> tuple[dict[str, list[dict]], dict[str, dict]]:
 
     for players in by_team.values():
         players.sort(key=lambda p: (p["position"] or "ZZ", p["name"]))
-    return by_team, by_id
+    return by_team, by_id, rosters
 
 
 def build_depth_charts(season: int, by_id: dict[str, dict]) -> dict[str, dict[str, list[dict]]]:
@@ -514,6 +516,166 @@ def build_plays(game_pbp: pl.DataFrame) -> list[dict]:
     return plays
 
 
+# Per-player statistics, mapped from nflverse's 150 columns to the handful a
+# reader actually looks for. Order matters: it is the order the UI renders.
+#
+# Absent means absent, as everywhere else in this contract — a zero is dropped
+# rather than emitted, so a quarterback's file carries no tackle counts and a
+# lineman's carries nothing at all, which is why linemen get no page.
+PLAYER_STATS = {
+    "completions": "completions",
+    "attempts": "attempts",
+    "passingYards": "passing_yards",
+    "passingTds": "passing_tds",
+    "interceptions": "passing_interceptions",
+    "passingEpa": "passing_epa",
+    "carries": "carries",
+    "rushingYards": "rushing_yards",
+    "rushingTds": "rushing_tds",
+    "rushingEpa": "rushing_epa",
+    "targets": "targets",
+    "receptions": "receptions",
+    "receivingYards": "receiving_yards",
+    "receivingTds": "receiving_tds",
+    "receivingEpa": "receiving_epa",
+    "tackles": "def_tackles_solo",
+    "sacks": "def_sacks",
+    "defInterceptions": "def_interceptions",
+    "forcedFumbles": "def_fumbles_forced",
+    "passesDefended": "def_pass_defended",
+    "fgMade": "fg_made",
+    "fgAtt": "fg_att",
+    "fgLong": "fg_long",
+    "patMade": "pat_made",
+    "patAtt": "pat_att",
+}
+
+
+def stat_line(row: dict, columns: set[str]) -> dict:
+    """One player's numbers, with the zeros left out."""
+    out: dict[str, float | int] = {}
+    for key, column in PLAYER_STATS.items():
+        if column not in columns:
+            continue
+        value = row.get(column)
+        if value is None:
+            continue
+        value = round(float(value), 2) if isinstance(value, float) else int(value)
+        if value:
+            out[key] = value
+    return out
+
+
+def sum_lines(rows: list[dict], columns: set[str]) -> dict:
+    """Season totals. EPA sums like everything else — it is an additive metric."""
+    totals: dict[str, float] = {}
+    for row in rows:
+        for key, value in stat_line(row, columns).items():
+            totals[key] = totals.get(key, 0) + value
+    # fg_long is a maximum, not a total; summing it would invent a 300-yard kick.
+    longs = [r.get("fg_long") for r in rows if r.get("fg_long")]
+    if longs:
+        totals["fgLong"] = max(int(v) for v in longs)
+    return {k: (round(v, 2) if isinstance(v, float) else v) for k, v in totals.items() if v}
+
+
+def build_players(
+    seasons: list[int],
+    display: int,
+    roster_rows: pl.DataFrame,
+    out: Path,
+) -> tuple[int, int, set[str]]:
+    """
+    One file per player who has actually done something measurable.
+
+    A page for a player with no recorded production would be their roster row
+    with a photograph on it, which is not worth a route. Of 3,135 players on a
+    2025 roster, 1,115 have no stat row in any season — 289 of them offensive
+    linemen, whose contribution this dataset simply does not measure. They get
+    no page and the roster does not link them.
+    """
+    stats = nfl.load_player_stats(seasons=seasons).filter(pl.col("season_type") == "REG")
+    columns = set(stats.columns)
+    by_player = dict(stats.partition_by("player_id", as_dict=True, include_key=True))
+
+    written = 0
+    total_bytes = 0
+    profiled: set[str] = set()
+
+    for row in roster_rows.iter_rows(named=True):
+        pid = row.get("gsis_id")
+        if not pid:
+            continue
+        frame = by_player.get((pid,))
+        if frame is None or frame.is_empty():
+            continue
+
+        rows = list(frame.iter_rows(named=True))
+        by_season: dict[int, list[dict]] = {}
+        for r in rows:
+            by_season.setdefault(int(r["season"]), []).append(r)
+
+        history = []
+        for season in sorted(by_season):
+            line = sum_lines(by_season[season], columns)
+            if not line:
+                continue
+            history.append({
+                "season": season,
+                "team": fix_abbr(by_season[season][-1]["team"]),
+                "games": len(by_season[season]),
+                "stats": line,
+            })
+        if not history:
+            continue
+
+        weeks = []
+        for r in sorted(by_season.get(display, []), key=lambda x: x["week"]):
+            line = stat_line(r, columns)
+            if not line:
+                continue
+            week = {
+                "season": int(r["season"]),
+                "week": int(r["week"]),
+                "opponent": fix_abbr(r.get("opponent_team")) or "",
+                "stats": line,
+            }
+            if r.get("game_id"):
+                week["gameId"] = text(r["game_id"])
+            weeks.append(week)
+
+        player = {
+            "id": pid,
+            "name": text(row.get("full_name")),
+            "position": text(row.get("position")),
+            "team": fix_abbr(row.get("team")),
+            "seasons": history,
+            "weeks": weeks,
+        }
+        optional = {
+            "headshot": text(row.get("headshot_url")) or None,
+            "number": whole(row.get("jersey_number")),
+            "age": age_on(row.get("birth_date"), display),
+            "college": text(row.get("college")) or None,
+            "height": whole(row.get("height")),
+            "weight": whole(row.get("weight")),
+            "experience": whole(row.get("years_exp")),
+        }
+        player.update({k: v for k, v in optional.items() if v is not None})
+
+        draft_year = whole(row.get("entry_year"))
+        draft_pick = whole(row.get("draft_number"))
+        if draft_year or draft_pick:
+            draft = {"year": draft_year, "pick": draft_pick, "club": fix_abbr(row.get("draft_club"))}
+            player["draft"] = {k: v for k, v in draft.items() if v}
+
+        total_bytes += write_json(out / "player" / f"{pid}.json", player)
+        profiled.add(pid)
+        written += 1
+
+    return written, total_bytes, profiled
+
+
 def season_states(schedules: pl.DataFrame, seasons: list[int]) -> list[dict]:
     """
     Per season: how many games are on the schedule, and how many have a result.
@@ -614,6 +776,8 @@ def main() -> None:
 
     current = display
     schedules = all_schedules
+    # A career spans the whole dataset even when only one season is rebuilt.
+    seasons_for_players = [s for s in available if s <= display]
     live = {
         fix_abbr(a)
         for a in set(schedules["home_team"].to_list()) | set(schedules["away_team"].to_list())
@@ -674,7 +838,7 @@ def main() -> None:
     pbp_now = nfl.load_pbp(seasons=[current])
     rec_now = records.get(current, {})
     stat_lines = build_stat_lines(pbp_now, rec_now)
-    rosters, by_id = build_rosters(current)
+    rosters, by_id, roster_rows = build_rosters(current)
     depth = build_depth_charts(current, by_id)
     draft = build_draft(current)
     prior = records.get(current - 1, {})
@@ -690,6 +854,17 @@ def main() -> None:
             "lastSeason": {"wins": p["wins"], "losses": p["losses"], "ties": p["ties"]},
             "projectedWins": num(rec["expectedWins"], 2),
         })
+
+    # ---- player layer ----
+    player_count, player_bytes, profiled = build_players(seasons_for_players, current, roster_rows, out)
+    total_bytes += player_bytes
+    print(f"  {player_count} player files ({len(roster_rows.unique(subset=['gsis_id']))} rostered)")
+
+    # A roster row says whether there is a page behind the name, so the UI can
+    # link the ones that lead somewhere and leave the rest as plain text.
+    for player in by_id.values():
+        if player["id"] in profiled:
+            player["hasProfile"] = True
 
     if len(teams_index) < len(team_meta):
         missing = sorted(set(team_meta) - {s["id"] for s in teams_index})

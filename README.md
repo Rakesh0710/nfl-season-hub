@@ -39,6 +39,9 @@ then plays the game back to them.
   timeline, a scrubber to drag, and a context box that always says where the game stands.
 - **Compare** — any two teams on one shared scale, offense and defense, with every game they have
   played since 2020 and the series record, each meeting linking to its replay.
+- **Player pages** — bio, headshot, season stats, a week-by-week trend that opens each game's
+  replay, and a season-by-season career table, for the 2,274 players the dataset records
+  production for.
 
 ## Demo
 
@@ -116,7 +119,7 @@ of football happens.
 
 ### Routing and data access
 
-Four routes — `/`, `/team/:id`, `/game/:id`, `/compare` — inside one shared layout, each page a
+Five routes — `/`, `/team/:id`, `/game/:id`, `/compare`, `/player/:id` — inside one shared layout, each page a
 lazy chunk, so a league visitor never downloads the replay engine and a comparison downloads
 neither the replay engine nor the motion runtime.
 
@@ -153,15 +156,16 @@ preview` reads no `vercel.json` — and was only caught by curling the deploymen
 
 ## Data model
 
-Five file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
+Six file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
 
-| File                  | Count | Size (raw / gzip)    | Contents                                                     |
-| --------------------- | ----: | -------------------- | ------------------------------------------------------------ |
-| `meta.json`           |     1 | 0.4 KB               | when the data was generated, and how complete each season is |
-| `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection         |
-| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,695 games: ids, dates, scores, type (not yet fetched)      |
-| `team/<ID>.json`      |    32 | 37 KB / 6.0 KB       | roster, depth chart, draft class, splits, ~105 games         |
-| `game/<GAME_ID>.json` | 1,695 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob        |
+| File                  | Count | Size (raw / gzip)    | Contents                                                             |
+| --------------------- | ----: | -------------------- | -------------------------------------------------------------------- |
+| `meta.json`           |     1 | 0.4 KB               | when the data was generated, and how complete each season is         |
+| `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection                 |
+| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,695 games: ids, dates, scores, type (not yet fetched)              |
+| `team/<ID>.json`      |    32 | 37 KB / 6.0 KB       | roster, depth chart, draft class, splits, ~105 games                 |
+| `game/<GAME_ID>.json` | 1,695 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob                |
+| `player/<ID>.json`    | 2,274 | 1.4 KB / 0.5 KB      | bio, headshot, career seasons, and the displayed season week by week |
 
 A game averages 6.8 KB over the wire, which is why a replay can load on demand with no backend.
 
@@ -307,8 +311,8 @@ any other origin passes through untouched.
 ## Testing
 
 ```
-287 unit and component tests   16 files   Vitest + React Testing Library
- 18 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
+317 unit and component tests   18 files   Vitest + React Testing Library
+ 23 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
 ```
 
 The tests are aimed at behaviour that could plausibly break, not at a coverage number.
@@ -348,7 +352,7 @@ for.
 
 | Job      | Steps                                                                                     |
 | -------- | ----------------------------------------------------------------------------------------- |
-| `verify` | `npm ci` → typecheck → lint → format check → 287 tests → production build → bundle report |
+| `verify` | `npm ci` → typecheck → lint → format check → 317 tests → production build → bundle report |
 | `data`   | `etl/validate.py` against the committed JSON (stdlib only; no ETL run needed)             |
 | `e2e`    | Playwright against the built app, report uploaded as an artifact                          |
 
@@ -495,7 +499,7 @@ npm run dev            # http://localhost:5173
 npm run typecheck      # tsc -b, four projects: app, node, tests, e2e
 npm run lint           # oxlint
 npm run format         # prettier --write .
-npm test               # Vitest, 287 tests
+npm test               # Vitest, 317 tests
 npm run test:coverage  # with a v8 coverage report
 npm run e2e            # Playwright (builds and serves the app itself)
 npm run build          # typecheck + production build
@@ -509,6 +513,25 @@ Refreshing the data is a separate, Python-side job — see
 
 The generated data is committed, so nothing above needs Python or a network round trip to
 nflverse.
+
+### Player pages, and who does not get one
+
+`player/<id>.json` exists for players the dataset records production for — 2,274 of the 3,135 on a
+2025 roster. The other 861 have no stat row in any season, 289 of them offensive linemen, whose
+contribution nflverse simply does not measure. A page for them would be their roster row with a
+photograph on it, so they get neither a page nor a link, and the roster carries `hasProfile` to
+say which names lead somewhere.
+
+Which numbers a page shows is decided by which numbers exist, never by the position in the file.
+Mahomes' 2025 line contains one tackle and one reception; a page that branched on "quarterback"
+would have hidden both, and would have been wrong for every two-way player in the league.
+
+**Headshots were the surprise.** nflverse points at the NFL's Cloudinary CDN, where the stored
+images are **3–6 MB PNGs** — one headshot is larger than every script, stylesheet and data file
+this site serves put together. They sit behind an `f_auto,q_auto` transformation, and appending a
+width to it resizes on their CDN: measured across four players, **3–5 MB becomes 6 KB at 160px and
+20 KB at 320px**. `headshotAt` does that, and returns anything not on that CDN untouched. The
+end-to-end suite fails if a headshot ever arrives over 200 KB.
 
 ## Keeping the data current
 
