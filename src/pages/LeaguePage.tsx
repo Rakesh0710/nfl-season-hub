@@ -32,26 +32,33 @@ import { describeCoverage, needsCoverageNotice } from '@/lib/season'
 import { useAsync } from '@/lib/useAsync'
 import type { Meta, SeasonRecord, TeamSeasonView, TeamSummary } from '@/types/nfl'
 
-type LeagueData = { teams: TeamSummary[]; standings: SeasonRecord[] }
+type LeagueData = { teams: TeamSummary[]; standings: SeasonRecord[]; meta: Meta | null }
 
 export default function LeaguePage() {
-  const state = useAsync<LeagueData>('league', async () => {
-    // Both are small and neither can draw a card without the other, so they go
-    // together rather than as a waterfall.
-    const [teams, standings] = await Promise.all([getTeamsIndex(), getStandings()])
-    return { teams, standings }
-  })
-
   /**
-   * Fetched apart from the dashboard, and allowed to fail.
+   * Three files, one frame, and `meta.json` allowed to fail.
    *
-   * `meta.json` supplies the season to open on and the coverage note, neither
-   * of which the page needs to be useful — the seasons themselves come from
-   * the standings, which is the data being shown. Folding it into the fetch
-   * above let a 0.2 KB freshness file take the whole dashboard down, which an
-   * end-to-end test that aborts the request caught immediately.
+   * `allSettled`, not `all`. The freshness file supplies the season to open on
+   * and the coverage note; neither is load-bearing, because the seasons
+   * themselves come from the standings — the data actually being shown. An
+   * earlier version had it in `Promise.all` and a 0.2 KB file could take the
+   * whole dashboard down, which an end-to-end test that aborts the request
+   * caught at once.
+   *
+   * Fetching it separately fixed that and bought a layout shift instead: the
+   * coverage note lands above the controls, so arriving a frame later pushed
+   * the season tabs, the controls and the whole grid down 50 px. Measured at
+   * 0.026 on the run where meta was slowest, and reproducible by delaying that
+   * one request. Settling all three together means the page paints once.
    */
-  const meta = useAsync<Meta>('meta', getMeta)
+  const state = useAsync<LeagueData>('league', async () => {
+    const [teams, standings, meta] = await Promise.all([
+      getTeamsIndex(),
+      getStandings(),
+      getMeta().catch(() => null),
+    ])
+    return { teams, standings, meta }
+  })
   const [params, setParams] = useSearchParams()
 
   const data = state.status === 'success' ? state.data : undefined
@@ -69,7 +76,7 @@ export default function LeaguePage() {
   )
   const setView = (next: LeagueView) => setParams(viewToParams(next), { replace: true })
 
-  const displayed = meta.status === 'success' ? meta.data.displaySeason : undefined
+  const displayed = data?.meta?.displaySeason
   const opensOn = displayed !== undefined && seasons.includes(displayed) ? displayed : seasons[0]
   const season = view.season ?? opensOn ?? 0
   const inSeason = useMemo(
@@ -84,6 +91,7 @@ export default function LeaguePage() {
   if (state.status === 'loading') return <LeagueSkeleton />
   if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
+  const { meta } = state.data
   const total = inSeason.length
 
   return (
@@ -96,9 +104,7 @@ export default function LeaguePage() {
         </p>
       </header>
 
-      {meta.status === 'success' && needsCoverageNotice(meta.data) && (
-        <CoverageNotice meta={meta.data} />
-      )}
+      {meta && needsCoverageNotice(meta) && <CoverageNotice meta={meta} />}
 
       {/* Above the sort and filter controls, because it changes what every
           number below means rather than which of them are shown. */}

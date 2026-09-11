@@ -188,6 +188,22 @@ describe('the loaded dashboard', () => {
     await waitFor(() => expect(renderedTeams()).toHaveLength(4))
   })
 
+  it('renders in full when the freshness file fails, minus the coverage note', async () => {
+    // meta.json is not load-bearing: the seasons come from the standings. It
+    // is fetched with the rest so the page paints once, and caught so that a
+    // 0.2 KB file cannot take the dashboard down. Both halves matter.
+    mockedMeta.mockRejectedValue(new DataError('not-found', '/data/meta.json', 'gone', 404))
+    mount()
+    await screen.findByRole('heading', { level: 1, name: 'League' })
+
+    expect(renderedTeams()).toHaveLength(8)
+    // Falls back to the newest season the standings carry.
+    expect(
+      within(screen.getByRole('group', { name: 'Season' })).getByRole('button', { name: '2025' }),
+    ).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByText(/season is under way/)).not.toBeInTheDocument()
+  })
+
   it('offers every season with a team layer, newest first', async () => {
     mount()
     await screen.findByRole('heading', { level: 1, name: 'League' })
