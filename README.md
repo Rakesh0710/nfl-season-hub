@@ -164,6 +164,9 @@ Five file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
 
 A game averages 6.8 KB over the wire, which is why a replay can load on demand with no backend.
 
+Counts here are from the last refresh and grow while a season is being played — `meta.json` is the
+source of truth for what is actually shipped. The six completed seasons never change.
+
 Two rules make the contract hold:
 
 **Absent means absent.** An unknown value is _omitted_ from the JSON, never emitted as `null`.

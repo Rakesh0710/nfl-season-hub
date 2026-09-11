@@ -6,8 +6,9 @@ decisions the refresh makes on its own are safe to leave running on a schedule:
 which season the team layer describes, and what happens to the games already in
 the index.
 
-Standard library only, no framework — same as validate.py, so CI runs it
-without installing anything.
+Standard library only, no framework — same as validate.py. It imports
+`refresh_rules`, not `build_data`, so it runs with a bare Python and no
+install; importing the pipeline would have dragged nflreadpy in with it.
 
     python etl/test_refresh.py
 """
@@ -19,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from build_data import PROMOTE_MIN_PLAYED, choose_display_season, merge_index  # noqa: E402
+from refresh_rules import PROMOTE_MIN_PLAYED, choose_display_season, merge_index  # noqa: E402
 
 failures: list[str] = []
 
