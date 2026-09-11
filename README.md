@@ -36,9 +36,13 @@ then plays the game back to them.
 
 ## Demo
 
-> **Live demo:** _to be added once this repository is deployed._ `vercel.json` is committed and
-> the build is static, so a deploy is a one-click import. Until then, `npm install && npm run dev`
-> is about ten seconds to a running app — the data is committed to the repository.
+**[nfl-season-hub.vercel.app](https://nfl-season-hub.vercel.app)** — deployed from `main` on
+every push. No backend, so there is nothing to wake up.
+
+Try: [the league dashboard](https://nfl-season-hub.vercel.app/), a
+[team page](https://nfl-season-hub.vercel.app/team/KC), or the replay of
+[the longest game in the dataset](https://nfl-season-hub.vercel.app/game/2022_15_IND_MIN) — 218
+plays into overtime, Vikings 39, Colts 36.
 
 | League dashboard     | Team page          |
 | -------------------- | ------------------ |
@@ -127,6 +131,12 @@ even a `"comment"` key fails the build. The reasoning therefore lives here:
 - **`stale-while-revalidate`, not `immutable`** — game files are not content-hashed and do change
   when the ETL is re-run, so `immutable` would strand visitors on stale data. Game files get a day
   of freshness and a week of stale-serving; the small index files get an hour.
+- **`"source": "/data/((?!game/).*)"`** — the second rule has to exclude what the first one
+  matched. Vercel's `headers` are cumulative, not first-match-wins like `rewrites`: every matching
+  rule is applied and the last one wins for a repeated key. Written as a plain `/data/(.*)`, the
+  hour-long index rule silently overwrote the day-long game rule, and the header the deployed site
+  actually returned for a 46 KB game file was the wrong one. This was invisible locally — `vite
+preview` reads no `vercel.json` — and was only caught by curling the deployment.
 
 ---
 
