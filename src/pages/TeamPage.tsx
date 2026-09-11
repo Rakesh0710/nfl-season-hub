@@ -7,16 +7,19 @@
  */
 
 import { domAnimation, LazyMotion, m, useReducedMotion } from 'framer-motion'
-import { Link, useParams } from 'react-router-dom'
+import { useMemo } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import DepthChart from '@/components/DepthChart'
 import DraftClass from '@/components/DraftClass'
 import GamesList from '@/components/GamesList'
+import SeasonTabs from '@/components/SeasonTabs'
 import Roster from '@/components/Roster'
 import { ErrorState } from '@/components/States'
 import { TeamSkeleton } from '@/components/Skeletons'
 import TeamHeader from '@/components/TeamHeader'
 import TeamStats from '@/components/TeamStats'
 import { BAR_TRACK, teamAccent } from '@/lib/colors'
+import { defaultSeason, seasonsIn } from '@/lib/football'
 import { getMeta, getTeam, getTeamsIndex } from '@/lib/data'
 import { useAsync } from '@/lib/useAsync'
 import type { Meta, Team, TeamSummary } from '@/types/nfl'
@@ -39,6 +42,7 @@ export default function TeamPage() {
   // supplies opponent names and logos for the games list.
   // Already in the request cache: the footer fetches it on every page.
   const meta = useAsync<Meta>('meta', getMeta)
+  const [params, setParams] = useSearchParams()
   const state = useAsync<TeamPageData>(`team/${teamId}`, async () => {
     const [team, index] = await Promise.all([getTeam(teamId), getTeamsIndex()])
     return { team, teamsById: new Map(index.map((t) => [t.id, t])) }
@@ -49,6 +53,7 @@ export default function TeamPage() {
 
   const { team, teamsById } = state.data
   const accent = teamAccent(BAR_TRACK, team.primaryColor, team.secondaryColor)
+  const statsSeason = meta.status === 'success' ? meta.data.displaySeason : undefined
 
   return (
     <LazyMotion features={domAnimation} strict>
@@ -87,7 +92,13 @@ export default function TeamPage() {
         </div>
 
         <Section id="games" title="Games">
-          <GamesList games={team.games} teamId={team.id} teamsById={teamsById} />
+          <TeamGames
+            team={team}
+            teamsById={teamsById}
+            statsSeason={statsSeason}
+            season={params.get('season')}
+            onSeason={(next) => setParams({ season: String(next) }, { replace: true })}
+          />
         </Section>
 
         <Section id="stats" title="Team stats">
@@ -111,6 +122,56 @@ export default function TeamPage() {
         </Section>
       </div>
     </LazyMotion>
+  )
+}
+
+/**
+ * A team's games, one season at a time.
+ *
+ * The team file carries every season — around 105 games — because the replays
+ * are what the site is for and this list is the route to them. The rest of the
+ * page describes one season, so the note below says which; a stat block from
+ * 2025 above a game from 2020 is exactly the kind of mixing that needs a
+ * sentence rather than an assumption.
+ */
+function TeamGames({
+  team,
+  teamsById,
+  statsSeason,
+  season,
+  onSeason,
+}: {
+  team: Team
+  teamsById: Map<string, TeamSummary>
+  statsSeason: number | undefined
+  season: string | null
+  onSeason: (season: number) => void
+}) {
+  const seasons = useMemo(() => seasonsIn(team.games), [team.games])
+
+  // A hand-edited or stale `?season=` falls back rather than showing nothing,
+  // the same rule the league dashboard and the comparison follow.
+  const asked = Number(season)
+  const wanted = seasons.includes(asked) ? asked : undefined
+  const selected = wanted ?? defaultSeason(team.games, statsSeason)
+  const games = team.games.filter((game) => game.season === selected)
+
+  return (
+    <div>
+      <SeasonTabs
+        seasons={seasons}
+        value={selected}
+        onChange={onSeason}
+        label={`${team.id} games by season`}
+      />
+      <GamesList games={games} teamId={team.id} teamsById={teamsById} />
+      {statsSeason !== undefined && seasons.length > 1 && (
+        <p className="mt-3 text-xs text-muted">
+          Every season in the dataset. The roster, depth chart and stats elsewhere on this page
+          describe {statsSeason}.
+        </p>
+      )}
+    </div>
   )
 }
 

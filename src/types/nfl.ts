@@ -94,6 +94,15 @@ export interface Team extends TeamSummary {
     offense: TeamStatLine
     defense: TeamStatLine
   }
+  /**
+   * Every game this team has played across all seasons in the dataset, oldest
+   * first — roughly 105, not the 17 of one season.
+   *
+   * Deliberately wider than the rest of the team file, which describes a
+   * single season: the replays are the point of the site and the team page is
+   * how anyone reaches them. Consumers that want one season filter by
+   * `season`; `meta.displaySeason` says which one the stat lines above match.
+   */
   games: GameSummary[]
 }
 

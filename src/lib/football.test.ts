@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  defaultSeason,
   downDistance,
   groupByPosition,
   isActive,
@@ -10,6 +11,7 @@ import {
   recordFromGames,
   shortDate,
   shortWeekLabel,
+  seasonsIn,
   statusLabel,
   teamNickname,
   toTeamGame,
@@ -182,5 +184,46 @@ describe('teamNickname', () => {
 
   it('leaves a single-word name alone', () => {
     expect(teamNickname('Commanders')).toBe('Commanders')
+  })
+})
+
+describe('seasonsIn', () => {
+  const games = [
+    makeGameSummary({ gameId: 'a', season: 2022 }),
+    makeGameSummary({ gameId: 'b', season: 2024 }),
+    makeGameSummary({ gameId: 'c', season: 2022 }),
+  ]
+
+  it('lists each season once, newest first', () => {
+    expect(seasonsIn(games)).toEqual([2024, 2022])
+  })
+
+  it('is empty for a team with no games', () => {
+    expect(seasonsIn([])).toEqual([])
+  })
+})
+
+describe('defaultSeason', () => {
+  const games = [
+    makeGameSummary({ gameId: 'a', season: 2022 }),
+    makeGameSummary({ gameId: 'b', season: 2024 }),
+  ]
+
+  it('opens on the season the rest of the page describes', () => {
+    expect(defaultSeason(games, 2022)).toBe(2022)
+  })
+
+  it('falls back to the newest season the team actually played', () => {
+    // A team that did not play in the season the stat lines cover — an
+    // expansion or relocation year — must not open on an empty list.
+    expect(defaultSeason(games, 2026)).toBe(2024)
+  })
+
+  it('opens on the newest when nothing is preferred', () => {
+    expect(defaultSeason(games)).toBe(2024)
+  })
+
+  it('has nothing to open for a team with no games', () => {
+    expect(defaultSeason([], 2025)).toBeNull()
   })
 })

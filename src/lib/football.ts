@@ -240,3 +240,28 @@ export function shortWeekLabel(game: Scheduled): string {
       return `Wk ${game.week}`
   }
 }
+
+/**
+ * The seasons a list of games covers, newest first.
+ *
+ * Newest first because that is the order a season picker is read in: this
+ * year, then last year, then history.
+ */
+export function seasonsIn(games: readonly GameSummary[]): number[] {
+  return [...new Set(games.map((game) => game.season))].sort((a, b) => b - a)
+}
+
+/**
+ * The season to open a team page on.
+ *
+ * The one whose figures the rest of the page describes, when that team played
+ * in it; otherwise the most recent season it did play. A team page that opened
+ * on an empty list because the dataset had moved on would be a worse default
+ * than any of them.
+ */
+export function defaultSeason(games: readonly GameSummary[], preferred?: number): number | null {
+  const seasons = seasonsIn(games)
+  if (seasons.length === 0) return null
+  if (preferred !== undefined && seasons.includes(preferred)) return preferred
+  return seasons[0] ?? null
+}

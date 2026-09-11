@@ -678,7 +678,6 @@ def main() -> None:
     depth = build_depth_charts(current, by_id)
     draft = build_draft(current)
     prior = records.get(current - 1, {})
-    current_game_ids = {s["gameId"] for s in games_index if s["season"] == current}
 
     teams_index: list[dict] = []
     for team_id in sorted(team_meta):
@@ -705,12 +704,14 @@ def main() -> None:
 
     for summary in teams_index:
         team_id = summary["id"]
+        # Every season, not just the one the stat lines describe. The site
+        # ships six seasons of replays and the team page is the way in; when
+        # this carried one season, 1,409 of 1,694 replays had no route to them
+        # at all. Ordered oldest first so the page can group by season without
+        # sorting again. Costs about 2 KB gzipped per team file.
         team_games = sorted(
-            (s for s in games_index
-             if s["season"] == current
-             and (s["home"] == team_id or s["away"] == team_id)
-             and s["gameId"] in current_game_ids),
-            key=lambda s: (s["week"], s["date"]),
+            (s for s in games_index if s["home"] == team_id or s["away"] == team_id),
+            key=lambda s: (s["season"], s["week"], s["date"]),
         )
         total_bytes += write_json(out / "team" / f"{team_id}.json", {
             **summary,

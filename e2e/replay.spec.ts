@@ -177,3 +177,43 @@ test('a filtered league view survives a reload, because it lives in the URL', as
   await page.reload()
   await expect(page.getByRole('heading', { name: /16 of 32 teams in the AFC/ })).toBeVisible()
 })
+
+test('a team page reaches every season of replays, not just the current one', async ({ page }) => {
+  // Before the team file carried all seasons, 1,409 of the 1,694 shipped
+  // replays had no route to them from anywhere in the UI.
+  await page.goto('/team/KC')
+  await expect(page.getByRole('heading', { level: 1, name: /Chiefs/ })).toBeVisible()
+
+  const seasons = page.getByRole('group', { name: /games by season/i })
+  await expect(seasons).toBeVisible()
+  const labels = await seasons.getByRole('button').allTextContents()
+  expect(labels.length).toBeGreaterThanOrEqual(6)
+  expect(labels).toEqual([...labels].sort().reverse()) // newest first
+
+  // Open the oldest season and follow a game into its replay.
+  const oldest = labels[labels.length - 1]
+  if (!oldest) throw new Error('no seasons offered')
+  await seasons.getByRole('button', { name: oldest }).click()
+  await expect(seasons.getByRole('button', { name: oldest })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  const game = page.locator(`a[href^="/game/${oldest}_"]`).first()
+  await expect(game).toBeVisible()
+  await game.click()
+
+  await expect(page).toHaveURL(new RegExp(`/game/${oldest}_`))
+  await expect(page.getByRole('img', { name: /Win probability line for/ })).toBeVisible()
+})
+
+test('a chosen season survives a reload, because it is in the URL', async ({ page }) => {
+  await page.goto('/team/PHI?season=2021')
+  await expect(page.getByRole('heading', { level: 1, name: /Eagles/ })).toBeVisible()
+  const seasons = page.getByRole('group', { name: /games by season/i })
+  await expect(seasons.getByRole('button', { name: '2021' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(page.locator('a[href^="/game/2021_"]').first()).toBeVisible()
+})

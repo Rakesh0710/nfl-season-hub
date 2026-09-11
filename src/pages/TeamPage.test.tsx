@@ -4,6 +4,7 @@
  */
 
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TeamPage from '@/pages/TeamPage'
@@ -14,11 +15,24 @@ vi.mock('@/lib/data', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/data')>()),
   getTeam: vi.fn(),
   getTeamsIndex: vi.fn(),
+  getMeta: vi.fn(),
 }))
 
-const { getTeam, getTeamsIndex } = await import('@/lib/data')
+const { getTeam, getTeamsIndex, getMeta } = await import('@/lib/data')
 const mockedTeam = vi.mocked(getTeam)
 const mockedIndex = vi.mocked(getTeamsIndex)
+const mockedMeta = vi.mocked(getMeta)
+
+/** A team with a game in each of three seasons, like the real files. */
+function multiSeasonTeam() {
+  return makeTeam({
+    games: [
+      makeGameSummary({ gameId: '2022_01_KC_BUF', season: 2022, week: 1, home: 'BUF', away: 'KC' }),
+      makeGameSummary({ gameId: '2024_05_DEN_KC', season: 2024, week: 5, home: 'KC', away: 'DEN' }),
+      makeGameSummary({ gameId: '2025_09_KC_DEN', season: 2025, week: 9, home: 'DEN', away: 'KC' }),
+    ],
+  })
+}
 
 function mount(path = '/team/KC') {
   return render(
@@ -33,7 +47,19 @@ function mount(path = '/team/KC') {
 beforeEach(() => {
   mockedTeam.mockReset()
   mockedIndex.mockReset()
+  mockedMeta.mockReset()
   mockedIndex.mockResolvedValue(makeLeague())
+  mockedMeta.mockResolvedValue({
+    generatedAt: '2026-09-11T05:00:00Z',
+    source: 'nflverse',
+    displaySeason: 2025,
+    latestSeason: 2026,
+    seasons: [
+      { season: 2022, scheduled: 284, played: 284, complete: true },
+      { season: 2024, scheduled: 285, played: 285, complete: true },
+      { season: 2025, scheduled: 285, played: 285, complete: true },
+    ],
+  })
 })
 
 describe('rendering a team', () => {
@@ -126,5 +152,78 @@ describe('missing and partial data', () => {
     mockedTeam.mockReturnValue(new Promise(() => {}))
     mount()
     expect(screen.getByRole('status')).toHaveTextContent(/loading/i)
+  })
+})
+
+describe('six seasons of games', () => {
+  beforeEach(() => {
+    mockedTeam.mockResolvedValue(multiSeasonTeam())
+  })
+
+  it('offers every season the team has played, newest first', async () => {
+    mount()
+    const tabs = await screen.findByRole('group', { name: /games by season/i })
+    expect(
+      within(tabs)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['2025', '2024', '2022'])
+  })
+
+  it('opens on the season the rest of the page describes', async () => {
+    mount()
+    const tabs = await screen.findByRole('group', { name: /games by season/i })
+    expect(within(tabs).getByRole('button', { name: '2025' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByRole('link', { name: /Denver Broncos/ })).toHaveAttribute(
+      'href',
+      '/game/2025_09_KC_DEN',
+    )
+  })
+
+  it('shows one season at a time, and switching changes the list', async () => {
+    mount()
+    const tabs = await screen.findByRole('group', { name: /games by season/i })
+
+    await userEvent.click(within(tabs).getByRole('button', { name: '2022' }))
+    expect(screen.getByRole('link', { name: /Buffalo Bills/ })).toHaveAttribute(
+      'href',
+      '/game/2022_01_KC_BUF',
+    )
+    expect(screen.queryByRole('link', { name: /2025_09/ })).not.toBeInTheDocument()
+  })
+
+  it('puts the season in the URL, so a past season is shareable', async () => {
+    mount('/team/KC?season=2022')
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.getByRole('link', { name: /Buffalo Bills/ })).toHaveAttribute(
+      'href',
+      '/game/2022_01_KC_BUF',
+    )
+  })
+
+  it('falls back rather than showing an empty list for a season not played', async () => {
+    mount('/team/KC?season=1999')
+    await screen.findByRole('heading', { level: 1 })
+    const tabs = screen.getByRole('group', { name: /games by season/i })
+    expect(within(tabs).getByRole('button', { name: '2025' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('says which season the figures elsewhere on the page describe', async () => {
+    mount()
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.getByText(/stats elsewhere on this page describe 2025/)).toBeInTheDocument()
+  })
+
+  it('offers no season control for a team with only one season of games', async () => {
+    mockedTeam.mockResolvedValue(makeTeam())
+    mount()
+    await screen.findByRole('heading', { level: 1 })
+    expect(screen.queryByRole('group', { name: /games by season/i })).not.toBeInTheDocument()
   })
 })

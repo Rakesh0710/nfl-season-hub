@@ -3,7 +3,7 @@
 Six NFL seasons you can drill through — league standings, any team, any game — ending in a
 scrubbable, animated replay of how that game's win probability actually moved.
 
-**League → Team → Game → Replay.** 2020–2026. 1,694 games, 273,476 plays. No backend.
+**League → Team → Game → Replay.** 2020–2026. 1,695 games, 273,623 plays. No backend.
 
 [![CI](https://github.com/Rakesh0710/nfl-season-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/Rakesh0710/nfl-season-hub/actions/workflows/ci.yml)
 [![Live](https://img.shields.io/badge/live-nfl--season--hub.vercel.app-000?logo=vercel)](https://nfl-season-hub.vercel.app)
@@ -32,7 +32,8 @@ then plays the game back to them.
   filterable by conference and division. The view lives in the URL, so a filtered dashboard is a
   link you can send someone.
 - **Team page** — projected wins against last season's result, offensive and defensive splits,
-  depth chart, roster and draft class, and every game that season as a route into its replay.
+  depth chart, roster and draft class, and every game the team has played in six seasons, one
+  season at a time, each a route into its replay.
 - **Game replay** — the flagship. The home team's win probability animates across the game one
   play at a time on an HTML canvas, with the plays the ETL flagged as decisive marked along the
   timeline, a scrubber to drag, and a context box that always says where the game stands.
@@ -86,7 +87,7 @@ _(Screenshots are captured from the production build by Playwright; see
     etl/build_data.py — run once, locally, by hand
                         │
                         ▼
-             Typed static JSON  ×1,729
+             Typed static JSON  ×1,730
   meta · teams-index · games-index · team/<ID> · game/<GAME_ID>
                         │
               etl/validate.py enforces the contract
@@ -158,11 +159,19 @@ Five file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
 | --------------------- | ----: | -------------------- | ------------------------------------------------------------ |
 | `meta.json`           |     1 | 0.4 KB               | when the data was generated, and how complete each season is |
 | `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection         |
-| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,694 games: ids, dates, scores, type (not yet fetched)      |
-| `team/<ID>.json`      |    32 | ~23 KB               | roster, depth chart, draft class, splits, games              |
-| `game/<GAME_ID>.json` | 1,694 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob        |
+| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,695 games: ids, dates, scores, type (not yet fetched)      |
+| `team/<ID>.json`      |    32 | 37 KB / 6.0 KB       | roster, depth chart, draft class, splits, ~105 games         |
+| `game/<GAME_ID>.json` | 1,695 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob        |
 
 A game averages 6.8 KB over the wire, which is why a replay can load on demand with no backend.
+
+A team file carries **every** season's games — about 105, not the 17 of one season — while the
+rest of it describes a single season. That asymmetry is deliberate: the replays are the point of
+the site and the team page is the way in. When this field held one season, 1,409 of the 1,694
+replays shipped at the time had no route to them from anywhere in the UI; the only way to a 2021 game was a
+head-to-head list on the comparison page. Widening it costs **2.0 KB gzipped per team file** and
+makes all of them reachable in two clicks. Fetching `games-index.json` on the team page instead
+would have cost 27 KB for the same result.
 
 Counts here are from the last refresh and grow while a season is being played — `meta.json` is the
 source of truth for what is actually shipped. The six completed seasons never change.
@@ -180,7 +189,7 @@ curve and the markers on the timeline can never come to mean different things.
 
 ### Validation happens twice, from both sides
 
-[`etl/validate.py`](etl/validate.py) checks all 1,729 generated files against the contract from
+[`etl/validate.py`](etl/validate.py) checks all 1,730 generated files against the contract from
 the producing side, and is itself verified by fault injection. It caught four real defects:
 non-chronological `play_id`, timeout rows carrying stale scores, playoff games inflating
 per-game rates, and a 2025 depth-chart schema change upstream.
@@ -260,7 +269,7 @@ did that job and was then deleted. A charting library was never going to give pe
 a 218-point animated reveal, and shipping both would have cost the bundle twice. Validating first
 and replacing second is cheaper than either guessing or building the hard thing twice.
 
-**Local ETL over runtime processing.** Parsing 273,476 plays takes minutes; doing it per request
+**Local ETL over runtime processing.** Parsing 273,623 plays takes minutes; doing it per request
 would be absurd, and doing it in a serverless function would reintroduce the backend the design
 exists to avoid. The tradeoff is that data freshness is a human action.
 
@@ -298,8 +307,8 @@ any other origin passes through untouched.
 ## Testing
 
 ```
-274 unit and component tests   16 files   Vitest + React Testing Library
- 16 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
+287 unit and component tests   16 files   Vitest + React Testing Library
+ 18 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
 ```
 
 The tests are aimed at behaviour that could plausibly break, not at a coverage number.
@@ -339,7 +348,7 @@ for.
 
 | Job      | Steps                                                                                     |
 | -------- | ----------------------------------------------------------------------------------------- |
-| `verify` | `npm ci` → typecheck → lint → format check → 274 tests → production build → bundle report |
+| `verify` | `npm ci` → typecheck → lint → format check → 287 tests → production build → bundle report |
 | `data`   | `etl/validate.py` against the committed JSON (stdlib only; no ETL run needed)             |
 | `e2e`    | Playwright against the built app, report uploaded as an artifact                          |
 
@@ -426,7 +435,7 @@ A loaded comparison adds 35 KiB of data on top — two team files and the 27 KiB
 opens a game.
 
 **What the runtime contract costs.** Validating the largest file the app loads — the 239 KB,
-1,694-game index — takes **0.23 ms**, against the **0.57 ms** `JSON.parse` spends on the same
+1,695-game index — takes **0.23 ms**, against the **0.57 ms** `JSON.parse` spends on the same
 file. It adds **1.17 kB gzipped** to the shared data chunk (1.85 → 3.02 kB), measured by building
 the previous commit and diffing. Because validation is that cheap, the cache stores the unchecked
 JSON and re-validates on each read, rather than storing a typed value the cache would have to
@@ -486,7 +495,7 @@ npm run dev            # http://localhost:5173
 npm run typecheck      # tsc -b, four projects: app, node, tests, e2e
 npm run lint           # oxlint
 npm run format         # prettier --write .
-npm test               # Vitest, 274 tests
+npm test               # Vitest, 287 tests
 npm run test:coverage  # with a v8 coverage report
 npm run e2e            # Playwright (builds and serves the app itself)
 npm run build          # typecheck + production build
@@ -664,7 +673,7 @@ appear here for identification only.
 - **A drive-level layer over the play-level one.** The ETL already knows possession and scoring;
   grouping plays into drives would let the replay skip forward a drive at a time, which is closer
   to how people actually talk about a game.
-- **Search across all 1,694 games** — by team, week, margin, or "games that swung more than 60
+- **Search across all 1,695 games** — by team, week, margin, or "games that swung more than 60
   points". `games-index.json` already exists, is validated, and has a typed accessor; no page
   loads it yet, because a team's own games travel inside its team file. At 27 KB gzipped this is
   a filter over one fetch, not a backend.
