@@ -20,11 +20,13 @@ function Panel({
   title,
   line,
   color,
+  season,
   lowerIsBetter,
 }: {
   title: string
   line: TeamStatLine | undefined
   color: string
+  season?: number
   lowerIsBetter?: boolean
 }) {
   return (
@@ -50,7 +52,11 @@ function Panel({
             ))}
           </div>
           <p className="mt-3 text-[11px] text-muted">
-            From {line.plays.toLocaleString()} regular-season scrimmage plays.
+            {/* Naming the season is not decoration. These are season-shaped
+                figures, and a reader who assumes they are this week's is
+                reading them wrong. */}
+            From {line.plays.toLocaleString()} regular-season scrimmage plays
+            {season ? ` in ${season}` : ''}.
           </p>
         </>
       )}
@@ -58,11 +64,19 @@ function Panel({
   )
 }
 
-export default function TeamStats({ stats, color }: { stats: TeamStatsShape; color: string }) {
+export default function TeamStats({
+  stats,
+  color,
+  season,
+}: {
+  stats: TeamStatsShape
+  color: string
+  season?: number
+}) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <Panel title="Offense" line={stats?.offense} color={color} />
-      <Panel title="Defense" line={stats?.defense} color={color} lowerIsBetter />
+      <Panel title="Offense" line={stats?.offense} color={color} season={season} />
+      <Panel title="Defense" line={stats?.defense} color={color} season={season} lowerIsBetter />
     </div>
   )
 }

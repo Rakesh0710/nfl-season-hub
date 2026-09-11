@@ -17,9 +17,9 @@ import { TeamSkeleton } from '@/components/Skeletons'
 import TeamHeader from '@/components/TeamHeader'
 import TeamStats from '@/components/TeamStats'
 import { BAR_TRACK, teamAccent } from '@/lib/colors'
-import { getTeam, getTeamsIndex } from '@/lib/data'
+import { getMeta, getTeam, getTeamsIndex } from '@/lib/data'
 import { useAsync } from '@/lib/useAsync'
-import type { Team, TeamSummary } from '@/types/nfl'
+import type { Meta, Team, TeamSummary } from '@/types/nfl'
 
 const SECTIONS = [
   { id: 'games', label: 'Games' },
@@ -37,6 +37,8 @@ export default function TeamPage() {
 
   // The index is already cached if the visitor arrived from the dashboard; it
   // supplies opponent names and logos for the games list.
+  // Already in the request cache: the footer fetches it on every page.
+  const meta = useAsync<Meta>('meta', getMeta)
   const state = useAsync<TeamPageData>(`team/${teamId}`, async () => {
     const [team, index] = await Promise.all([getTeam(teamId), getTeamsIndex()])
     return { team, teamsById: new Map(index.map((t) => [t.id, t])) }
@@ -89,7 +91,11 @@ export default function TeamPage() {
         </Section>
 
         <Section id="stats" title="Team stats">
-          <TeamStats stats={team.stats} color={accent} />
+          <TeamStats
+            stats={team.stats}
+            color={accent}
+            season={meta.status === 'success' ? meta.data.displaySeason : undefined}
+          />
         </Section>
 
         <Section id="depth" title="Depth chart">

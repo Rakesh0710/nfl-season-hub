@@ -12,7 +12,7 @@ import LeagueControls from '@/components/LeagueControls'
 import { ErrorState } from '@/components/States'
 import { LeagueSkeleton } from '@/components/Skeletons'
 import TeamCard from '@/components/TeamCard'
-import { getTeamsIndex } from '@/lib/data'
+import { getMeta, getTeamsIndex } from '@/lib/data'
 import {
   DEFAULT_VIEW,
   describeView,
@@ -23,11 +23,13 @@ import {
   viewToParams,
   type LeagueView,
 } from '@/lib/league'
+import { describeCoverage, needsCoverageNotice } from '@/lib/season'
 import { useAsync } from '@/lib/useAsync'
-import type { TeamSummary } from '@/types/nfl'
+import type { Meta, TeamSummary } from '@/types/nfl'
 
 export default function LeaguePage() {
   const state = useAsync<TeamSummary[]>('teams-index', getTeamsIndex)
+  const meta = useAsync<Meta>('meta', getMeta)
   const [params, setParams] = useSearchParams()
 
   const teams = state.status === 'success' ? state.data : undefined
@@ -61,6 +63,10 @@ export default function LeaguePage() {
           All {total} teams by season outlook. Choose a team to open its roster, stats and games.
         </p>
       </header>
+
+      {meta.status === 'success' && needsCoverageNotice(meta.data) && (
+        <CoverageNotice meta={meta.data} />
+      )}
 
       <LeagueControls teams={state.data} view={view} onChange={setView} />
 
@@ -145,6 +151,22 @@ function GroupedTeams({ teams }: { teams: TeamSummary[] }) {
         )
       })}
     </div>
+  )
+}
+
+/**
+ * What these figures cover, when that is not simply "the season".
+ *
+ * Shown above the controls rather than in a footnote: it changes how every
+ * number below it should be read, and a reader who has already drawn a
+ * conclusion from a partial stat line has been misled whatever the small print
+ * says. It is not an alert — nothing is wrong — so it is a plain note.
+ */
+function CoverageNotice({ meta }: { meta: Meta }) {
+  return (
+    <p className="mt-4 rounded-lg border border-neutral-800 bg-neutral-900/40 px-3 py-2 text-xs text-neutral-300">
+      {describeCoverage(meta)}
+    </p>
   )
 }
 

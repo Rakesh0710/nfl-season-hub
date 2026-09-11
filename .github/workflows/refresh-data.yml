@@ -1,0 +1,125 @@
+name: Refresh data
+
+# In-season update: re-derive the newest season from nflverse, merge it into
+# the committed JSON, and open a pull request with the diff.
+#
+# It opens a PR rather than pushing to main on purpose. The data is the
+# product here, a bad refresh is a bad deploy, and the diff is the review: a
+# handful of changed files is a normal week, and anything larger is a question
+# worth answering before it reaches the site. Everything before that point is
+# automatic; the merge is the one human step.
+
+on:
+  schedule:
+    # 09:00 UTC on Tuesday — after Monday night's game has finished and
+    # nflverse has published its play-by-play, which lags the final whistle by
+    # a few hours.
+    - cron: '0 9 * * 2'
+  workflow_dispatch:
+    inputs:
+      display-season:
+        description: 'Force the season the team layer describes (blank = the promotion rule decides)'
+        required: false
+        type: string
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    name: Rebuild the current season
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: etl/requirements.txt
+
+      - name: Install the ETL
+        run: pip install -r etl/requirements.txt
+
+      - name: Refresh
+        run: |
+          python etl/build_data.py --refresh \
+            ${{ inputs.display-season && format('--display-season {0}', inputs.display-season) || '' }}
+
+      # Fail closed. A refresh that produced data the contract rejects must not
+      # reach a pull request, let alone main.
+      - name: Validate against the contract
+        run: python etl/validate.py --data public/data
+
+      # The frontend's own parsers check the same contract from the other side,
+      # and the colour tests read the real team index. If the shipped app can
+      # no longer read the shipped data, that is the same failure as an invalid
+      # file and it should stop here too.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check the app can read it
+        run: npm run test && npm run build
+
+      - name: Summarise the change
+        id: diff
+        run: |
+          git add -A public/data
+          changed=$(git diff --cached --name-only public/data | wc -l | tr -d ' ')
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Refresh"
+            echo
+            if [ "$changed" -eq 0 ]; then
+              echo "No change. Nothing new since the last run."
+            else
+              echo "\`$changed\` file(s) changed."
+              echo
+              echo '```'
+              git diff --cached --stat public/data | tail -20
+              echo '```'
+              echo
+              echo '```json'
+              cat public/data/meta.json
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Nothing to review means no pull request. A weekly PR saying "no change"
+      # trains people to merge without looking, which is the failure mode this
+      # whole approval step exists to avoid.
+      - name: Open a pull request
+        if: steps.diff.outputs.changed != '0'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: data/refresh
+          base: main
+          commit-message: |
+            Refresh current-season data
+
+            Regenerated the newest season from nflverse and merged it into the
+            index. Historical seasons are untouched; see meta.json for what is
+            complete and what is still being played.
+          title: 'Refresh current-season data'
+          body: |
+            Automated in-season refresh.
+
+            - Only the newest season was rebuilt; finished seasons are byte-identical.
+            - `etl/validate.py` passed, and the frontend's own parsers read the result.
+            - `meta.json` records when this ran and how far through each season the data is.
+
+            Worth a glance before merging: the file count in the run summary, and whether
+            `displaySeason` in `meta.json` changed. A change there means the team layer has
+            moved to a new season, and every figure on the league and team pages now
+            describes that season instead.
+          labels: data
+          delete-branch: true

@@ -5,6 +5,7 @@ Converts raw nflverse data into the small, typed static JSON the frontend reads.
 Run once; the output is committed to public/data.
 
     python etl/build_data.py [--seasons 2020 ... 2025] [--out public/data] [--clean]
+    python etl/build_data.py --refresh          # in-season update, see below
 
 Output layout:
     public/data/teams-index.json        league dashboard (the covered season)
@@ -16,6 +17,14 @@ The team layer covers the most recent season in range; `lastSeason` is the
 regular-season record of the year before it. The game layer spans every season,
 so all six seasons of replays are reachable from the game browser.
 
+Refresh mode rebuilds only the newest season and merges it into the existing
+index, leaving finished seasons untouched — a completed game never changes, so
+re-deriving five seasons to pick up Sunday's results would be 1,700 rewritten
+files for a handful of real ones.
+
+It also decides, by a stated rule rather than by whoever ran it, which season
+the team layer describes. See PROMOTE_MIN_PLAYED.
+
 Data: nflverse (https://github.com/nflverse), CC BY 4.0.
 """
 
@@ -25,7 +34,7 @@ import argparse
 import json
 import math
 import shutil
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import nflreadpy as nfl
@@ -36,6 +45,21 @@ import polars as pl
 # --------------------------------------------------------------------------
 
 SEASONS = [2020, 2021, 2022, 2023, 2024, 2025]
+
+# How many games a new season must have played before the team layer moves to
+# it.
+#
+# The team layer is one season's rosters, stat lines and projections. Pointed
+# at a season two games old it does not degrade gracefully, it collapses: on
+# 11 September 2026, with two games played, the league dashboard would have
+# listed four teams and dropped the other twenty-eight, each with a
+# "projected wins" of about 0.5 sitting beside a last-season record of 11-6.
+#
+# 64 games is roughly four weeks — enough for a stat line to mean something
+# and for every team to have played. Until then the team layer stays on the
+# last complete season and `meta.json` says a newer one is under way, so the
+# two are never silently blended. `--display-season` overrides this by hand.
+PROMOTE_MIN_PLAYED = 64
 
 # Standard deviation of NFL game margins. Converting a closing point spread to
 # a win probability with the normal CDF at this sigma is the conventional
@@ -496,6 +520,91 @@ def build_plays(game_pbp: pl.DataFrame) -> list[dict]:
     return plays
 
 
+def season_states(schedules: pl.DataFrame, seasons: list[int]) -> list[dict]:
+    """
+    Per season: how many games are on the schedule, and how many have a result.
+
+    This is what lets the frontend say "2026, 2 of 272 games played" instead of
+    presenting a two-game sample as a season.
+    """
+    states = []
+    for season in seasons:
+        rows = schedules.filter(pl.col("season") == season)
+        scheduled = len(rows)
+        played = len(rows.filter(pl.col("home_score").is_not_null()))
+        states.append({
+            "season": season,
+            "scheduled": scheduled,
+            "played": played,
+            "complete": scheduled > 0 and played == scheduled,
+        })
+    return states
+
+
+def choose_display_season(states: list[dict]) -> int:
+    """
+    Which season the team layer should describe.
+
+    The newest season that is either finished or far enough along to be worth
+    describing. Everything else about the refresh is mechanical; this is the
+    one judgement call, so it is a rule in one place rather than a flag someone
+    remembers to pass.
+    """
+    eligible = [
+        s["season"] for s in states
+        if s["complete"] or s["played"] >= PROMOTE_MIN_PLAYED
+    ]
+    if not eligible:
+        raise SystemExit("No season has enough games played to describe. Refusing to guess.")
+    return max(eligible)
+
+
+def build_meta(states: list[dict], display: int) -> dict:
+    """The freshness and completeness record the frontend reads."""
+    return {
+        # Whole seconds, UTC: a timestamp with microseconds in it changes on
+        # every run and would make an unchanged refresh look like a change.
+        "generatedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "source": "nflverse",
+        "displaySeason": display,
+        "latestSeason": max(s["season"] for s in states),
+        "seasons": states,
+    }
+
+
+def load_existing_index(out: Path) -> list[dict]:
+    """The games-index a refresh is going to merge into."""
+    path = out / "games-index.json"
+    if not path.exists():
+        raise SystemExit(
+            f"{path} does not exist. A refresh updates an existing build; "
+            "run a full build first."
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def merge_index(existing: list[dict], rebuilt: list[dict], seasons: set[int]) -> list[dict]:
+    """
+    The rebuilt seasons replace their own entries; every other season is kept
+    exactly as it was.
+
+    A game that was in the index and is not in the rebuild is a red flag, not a
+    deletion: nflverse dropping a game, or a partial download, would otherwise
+    quietly remove replays that are still linked from team pages.
+    """
+    kept = [g for g in existing if g["season"] not in seasons]
+    was = {g["gameId"] for g in existing if g["season"] in seasons}
+    now = {g["gameId"] for g in rebuilt}
+    if lost := was - now:
+        raise SystemExit(
+            f"{len(lost)} game(s) present in the old index are missing from the rebuild "
+            f"({', '.join(sorted(lost)[:5])}). Refusing to drop them."
+        )
+    merged = kept + rebuilt
+    merged.sort(key=lambda g: (g["season"], g["week"], g["date"], g["gameId"]))
+    return merged
+
+
 def game_summary(row: dict) -> dict:
     """One GameSummary from a schedule row."""
     return {
@@ -531,20 +640,50 @@ def main() -> None:
     ap.add_argument("--seasons", type=int, nargs="+", default=SEASONS)
     ap.add_argument("--out", type=Path, default=Path("public/data"))
     ap.add_argument("--clean", action="store_true", help="wipe the output dir first")
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="in-season update: rebuild only the newest season, merge it into the existing index",
+    )
+    ap.add_argument(
+        "--display-season",
+        type=int,
+        help="force the season the team layer describes, overriding the promotion rule",
+    )
     args = ap.parse_args()
 
-    seasons = sorted(set(args.seasons))
     out: Path = args.out
-    # The team layer describes the most recent season in range.
-    current = seasons[-1]
 
     if args.clean and out.exists():
         shutil.rmtree(out)
 
-    print(f"Seasons {seasons[0]}-{seasons[-1]}; team layer = {current} -> {out}")
+    # The whole span the site covers, plus anything nflverse has started
+    # publishing since the last full build.
+    known = sorted(set(args.seasons))
+    # Every season at once — the schedule file is 7,500 rows, and asking for a
+    # range that runs past what nflverse publishes is an error rather than an
+    # empty frame. Filtering afterwards is how a new season is discovered.
+    all_schedules = nfl.load_schedules().filter(pl.col("season") >= known[0] - 1)
+    available = sorted({int(s) for s in all_schedules["season"].to_list() if s >= known[0]})
+    states = season_states(all_schedules, available)
+    display = args.display_season or choose_display_season(states)
 
-    # Pull one extra prior season so `lastSeason` exists for the team layer.
-    schedules = nfl.load_schedules(seasons=list(range(seasons[0] - 1, seasons[-1] + 1)))
+    if args.refresh:
+        seasons = [max(available)]
+        existing = load_existing_index(out)
+        print(f"Refresh: rebuilding {seasons[0]} only, merging into {len(existing)} indexed games")
+    else:
+        seasons = available
+        existing = []
+        print(f"Full build: seasons {seasons[0]}-{seasons[-1]}")
+
+    for state in states:
+        mark = "complete" if state["complete"] else "IN PROGRESS"
+        star = "  <- team layer" if state["season"] == display else ""
+        print(f"  {state['season']}: {state['played']}/{state['scheduled']} played, {mark}{star}")
+
+    current = display
+    schedules = all_schedules
     live = {
         fix_abbr(a)
         for a in set(schedules["home_team"].to_list()) | set(schedules["away_team"].to_list())
@@ -557,6 +696,7 @@ def main() -> None:
     total_bytes = 0
     games_index: list[dict] = []
     game_sizes: list[int] = []
+    rebuilt_seasons = set(seasons)
 
     # ---- game layer: every season ----
     for season in seasons:
@@ -593,6 +733,10 @@ def main() -> None:
 
         print(f"  [{season}] {len(pbp):,} pbp rows -> {written} game files")
 
+    # A refresh rebuilt one season; the rest of the index has to survive it.
+    # Rebuilding the index from just the rebuilt season is the single most
+    # destructive thing this script could do, so it is not possible to express.
+    games_index = merge_index(existing, games_index, rebuilt_seasons)
     total_bytes += write_json(out / "games-index.json", games_index)
 
     # ---- team layer: the current season only ----
@@ -618,6 +762,15 @@ def main() -> None:
             "projectedWins": num(rec["expectedWins"], 2),
         })
 
+    if len(teams_index) < len(team_meta):
+        missing = sorted(set(team_meta) - {s["id"] for s in teams_index})
+        raise SystemExit(
+            f"Only {len(teams_index)} of {len(team_meta)} teams have a {current} record "
+            f"({', '.join(missing[:6])}{'...' if len(missing) > 6 else ''}). "
+            "Refusing to publish a dashboard missing teams; the promotion rule should "
+            "have kept the team layer on an earlier season."
+        )
+
     total_bytes += write_json(out / "teams-index.json", teams_index)
 
     for summary in teams_index:
@@ -637,6 +790,8 @@ def main() -> None:
             "stats": stat_lines.get(team_id, {}),
             "games": team_games,
         })
+
+    total_bytes += write_json(out / "meta.json", build_meta(states, display))
 
     avg = sum(game_sizes) / len(game_sizes) / 1024 if game_sizes else 0
     print(

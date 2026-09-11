@@ -25,6 +25,7 @@ import json
 import math
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 GAME_ID = re.compile(r"^\d{4}_\d{2}_[A-Z]{2,3}_[A-Z]{2,3}$")
@@ -121,6 +122,11 @@ def check_shape(where: str, obj, schema: dict[str, tuple[type, bool]]) -> None:
 
 def load(path: Path):
     """Load, and prove the file round-trips as strict JSON (check 8)."""
+    if not path.exists():
+        # A missing file is a contract failure like any other, and reporting it
+        # alongside the rest beats a traceback that hides the other 40 problems.
+        fail(f"{path}: missing")
+        return {}
     raw = path.read_text(encoding="utf-8")
     for bad in ("NaN", "Infinity"):
         if re.search(rf"(?<![\"\w]){bad}(?![\"\w])", raw):
@@ -219,6 +225,52 @@ def main() -> int:
         pw = t.get("projectedWins")
         if isinstance(pw, (int, float)) and not 0 <= pw <= 25:
             fail(f"{where}: projectedWins {pw} outside a plausible 0..25")
+
+    # ---------- meta ----------
+    # The freshness record. It is what lets the site say how old the data is
+    # and which season is complete, so a wrong one is worse than none: it would
+    # label an incomplete season as finished.
+    meta = load(data / "meta.json")
+    meta_seasons: dict[int, dict] = {}
+    if not isinstance(meta, dict):
+        fail("meta.json: expected an object")
+    else:
+        check_shape("meta", meta, {
+            "generatedAt": (str, True), "source": (str, True),
+            "displaySeason": (int, True), "latestSeason": (int, True),
+            "seasons": (list, True),
+        })
+        try:
+            datetime.fromisoformat(str(meta.get("generatedAt", "")).replace("Z", "+00:00"))
+        except ValueError:
+            fail(f"meta.generatedAt {meta.get('generatedAt')!r} is not an ISO 8601 timestamp")
+
+        for s in meta.get("seasons", []):
+            where = f"meta.seasons[{s.get('season')}]"
+            check_shape(where, s, {
+                "season": (int, True), "scheduled": (int, True),
+                "played": (int, True), "complete": (bool, True),
+            })
+            if isinstance(s.get("season"), int):
+                meta_seasons[s["season"]] = s
+            played, scheduled = s.get("played"), s.get("scheduled")
+            if isinstance(played, int) and isinstance(scheduled, int):
+                if played > scheduled:
+                    fail(f"{where}: {played} played of {scheduled} scheduled")
+                if s.get("complete") is not (scheduled > 0 and played == scheduled):
+                    fail(
+                        f"{where}: complete={s.get('complete')} contradicts "
+                        f"{played}/{scheduled} played"
+                    )
+
+        display = meta.get("displaySeason")
+        if display not in meta_seasons:
+            fail(f"meta.displaySeason {display!r} is not one of the seasons listed")
+        if isinstance(meta.get("latestSeason"), int) and meta_seasons:
+            if meta["latestSeason"] != max(meta_seasons):
+                fail("meta.latestSeason is not the newest season listed")
+            if isinstance(display, int) and display > meta["latestSeason"]:
+                fail("meta.displaySeason is newer than meta.latestSeason")
 
     # ---------- games-index ----------
     games_index = load(data / "games-index.json")

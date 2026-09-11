@@ -22,6 +22,8 @@
 
 import type {
   Conference,
+  Meta,
+  SeasonState,
   DraftPick,
   Game,
   GamePlay,
@@ -247,6 +249,27 @@ const gameTeam: Parser<GameTeam> = (value, path) => {
     logo: field(o, 'logo', string, path),
     color: field(o, 'color', string, path),
     finalScore: field(o, 'finalScore', number, path),
+  }
+}
+
+const seasonState: Parser<SeasonState> = (value, path) => {
+  const o = object(value, path)
+  return {
+    season: field(o, 'season', number, path),
+    scheduled: field(o, 'scheduled', number, path),
+    played: field(o, 'played', number, path),
+    complete: field(o, 'complete', boolean, path),
+  }
+}
+
+export const parseMeta: Parser<Meta> = (value, path) => {
+  const o = object(value, path)
+  return {
+    generatedAt: field(o, 'generatedAt', string, path),
+    source: field(o, 'source', string, path),
+    displaySeason: field(o, 'displaySeason', number, path),
+    latestSeason: field(o, 'latestSeason', number, path),
+    seasons: field(o, 'seasons', arrayOf(seasonState), path),
   }
 }
 

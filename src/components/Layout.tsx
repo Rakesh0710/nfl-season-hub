@@ -4,9 +4,12 @@
  * licence requires.
  */
 
-import { Suspense } from 'react'
+import { lazy, Suspense } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { CompareSkeleton, GameSkeleton, LeagueSkeleton, TeamSkeleton } from '@/components/Skeletons'
+
+// Lazy, so the data layer stays out of the entry chunk for a footer note.
+const DataFreshness = lazy(() => import('@/components/DataFreshness'))
 
 function navClass({ isActive }: { isActive: boolean }) {
   return [
@@ -72,8 +75,13 @@ export default function Layout() {
             >
               CC BY 4.0
             </a>
-            . Seasons 2020-2025. Not affiliated with the NFL.
+            . Not affiliated with the NFL.
           </p>
+          {/* No fallback: the line simply appears when it can. Reserving space
+              for it would trade a real layout shift for an empty gap. */}
+          <Suspense fallback={null}>
+            <DataFreshness />
+          </Suspense>
         </div>
       </footer>
     </div>

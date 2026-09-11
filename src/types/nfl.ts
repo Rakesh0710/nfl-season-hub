@@ -152,6 +152,33 @@ export interface Game {
   plays: GamePlay[]
 }
 
+/** How far through a season the dataset is. One entry per season in `meta.json`. */
+export interface SeasonState {
+  season: number
+  /** Fixtures on the schedule. A season in progress already knows all of them. */
+  scheduled: number
+  /** Fixtures with a result. */
+  played: number
+  complete: boolean
+}
+
+/**
+ * `meta.json` — when the data was generated and how finished each season is.
+ *
+ * Written by every ETL run. Without it the site cannot tell a complete season
+ * from a two-game one, and would present both as "the season".
+ */
+export interface Meta {
+  /** ISO 8601, UTC, whole seconds. */
+  generatedAt: string
+  source: string
+  /** The season the team layer describes: rosters, stat lines, projections. */
+  displaySeason: number
+  /** The newest season nflverse has published a schedule for. */
+  latestSeason: number
+  seasons: SeasonState[]
+}
+
 /** Overtime period length in seconds: 10 minutes in the regular season, 15 in the playoffs. */
 export function overtimeLength(gameType: GameType): number {
   return gameType === 'REG' ? 600 : 900

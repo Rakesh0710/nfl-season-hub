@@ -3,7 +3,7 @@
 Six NFL seasons you can drill through — league standings, any team, any game — ending in a
 scrubbable, animated replay of how that game's win probability actually moved.
 
-**League → Team → Game → Replay.** 2020–2025. 1,693 games, 273,325 plays. No backend.
+**League → Team → Game → Replay.** 2020–2026. 1,694 games, 273,476 plays. No backend.
 
 [![CI](https://github.com/Rakesh0710/nfl-season-hub/actions/workflows/ci.yml/badge.svg)](https://github.com/Rakesh0710/nfl-season-hub/actions/workflows/ci.yml)
 [![Live](https://img.shields.io/badge/live-nfl--season--hub.vercel.app-000?logo=vercel)](https://nfl-season-hub.vercel.app)
@@ -86,8 +86,8 @@ _(Screenshots are captured from the production build by Playwright; see
     etl/build_data.py — run once, locally, by hand
                         │
                         ▼
-             Typed static JSON  ×1,727
-   teams-index · games-index · team/<ID> · game/<GAME_ID>
+             Typed static JSON  ×1,729
+  meta · teams-index · games-index · team/<ID> · game/<GAME_ID>
                         │
               etl/validate.py enforces the contract
                         │
@@ -152,14 +152,15 @@ preview` reads no `vercel.json` — and was only caught by curling the deploymen
 
 ## Data model
 
-Four file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
+Five file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
 
-| File                  | Count | Size (raw / gzip)    | Contents                                                |
-| --------------------- | ----: | -------------------- | ------------------------------------------------------- |
-| `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection    |
-| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,693 games: ids, dates, scores, type (not yet fetched) |
-| `team/<ID>.json`      |    32 | ~23 KB               | roster, depth chart, draft class, splits, games         |
-| `game/<GAME_ID>.json` | 1,693 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob   |
+| File                  | Count | Size (raw / gzip)    | Contents                                                     |
+| --------------------- | ----: | -------------------- | ------------------------------------------------------------ |
+| `meta.json`           |     1 | 0.4 KB               | when the data was generated, and how complete each season is |
+| `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection         |
+| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,694 games: ids, dates, scores, type (not yet fetched)      |
+| `team/<ID>.json`      |    32 | ~23 KB               | roster, depth chart, draft class, splits, games              |
+| `game/<GAME_ID>.json` | 1,694 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob        |
 
 A game averages 6.8 KB over the wire, which is why a replay can load on demand with no backend.
 
@@ -176,7 +177,7 @@ curve and the markers on the timeline can never come to mean different things.
 
 ### Validation happens twice, from both sides
 
-[`etl/validate.py`](etl/validate.py) checks all 1,727 generated files against the contract from
+[`etl/validate.py`](etl/validate.py) checks all 1,729 generated files against the contract from
 the producing side, and is itself verified by fault injection. It caught four real defects:
 non-chronological `play_id`, timeout rows carrying stale scores, playoff games inflating
 per-game rates, and a 2025 depth-chart schema change upstream.
@@ -256,7 +257,7 @@ did that job and was then deleted. A charting library was never going to give pe
 a 218-point animated reveal, and shipping both would have cost the bundle twice. Validating first
 and replacing second is cheaper than either guessing or building the hard thing twice.
 
-**Local ETL over runtime processing.** Parsing 273,325 plays takes minutes; doing it per request
+**Local ETL over runtime processing.** Parsing 273,476 plays takes minutes; doing it per request
 would be absurd, and doing it in a serverless function would reintroduce the backend the design
 exists to avoid. The tradeoff is that data freshness is a human action.
 
@@ -294,8 +295,8 @@ any other origin passes through untouched.
 ## Testing
 
 ```
-255 unit and component tests   15 files   Vitest + React Testing Library
- 12 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
+274 unit and component tests   16 files   Vitest + React Testing Library
+ 16 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
 ```
 
 The tests are aimed at behaviour that could plausibly break, not at a coverage number.
@@ -335,7 +336,7 @@ for.
 
 | Job      | Steps                                                                                     |
 | -------- | ----------------------------------------------------------------------------------------- |
-| `verify` | `npm ci` → typecheck → lint → format check → 255 tests → production build → bundle report |
+| `verify` | `npm ci` → typecheck → lint → format check → 274 tests → production build → bundle report |
 | `data`   | `etl/validate.py` against the committed JSON (stdlib only; no ETL run needed)             |
 | `e2e`    | Playwright against the built app, report uploaded as an artifact                          |
 
@@ -422,7 +423,7 @@ A loaded comparison adds 35 KiB of data on top — two team files and the 27 KiB
 opens a game.
 
 **What the runtime contract costs.** Validating the largest file the app loads — the 239 KB,
-1,693-game index — takes **0.23 ms**, against the **0.57 ms** `JSON.parse` spends on the same
+1,694-game index — takes **0.23 ms**, against the **0.57 ms** `JSON.parse` spends on the same
 file. It adds **1.17 kB gzipped** to the shared data chunk (1.85 → 3.02 kB), measured by building
 the previous commit and diffing. Because validation is that cheap, the cache stores the unchecked
 JSON and re-validates on each read, rather than storing a typed value the cache would have to
@@ -482,7 +483,7 @@ npm run dev            # http://localhost:5173
 npm run typecheck      # tsc -b, four projects: app, node, tests, e2e
 npm run lint           # oxlint
 npm run format         # prettier --write .
-npm test               # Vitest, 255 tests
+npm test               # Vitest, 274 tests
 npm run test:coverage  # with a v8 coverage report
 npm run e2e            # Playwright (builds and serves the app itself)
 npm run build          # typecheck + production build
@@ -491,8 +492,135 @@ npm run verify         # everything CI runs, in order
 
 Playwright needs its browser once: `npx playwright install chromium`.
 
+Refreshing the data is a separate, Python-side job — see
+[Keeping the data current](#keeping-the-data-current).
+
 The generated data is committed, so nothing above needs Python or a network round trip to
 nflverse.
+
+## Keeping the data current
+
+The data is static, and a finished game never changes — but a season in
+progress does. The update path keeps the static deployment and adds a schedule
+to it: **scheduled ETL → regenerated JSON → pull request → deploy**. No server,
+no database, no runtime fetch of anything but committed files.
+
+```
+Tuesday 09:00 UTC (or a manual run)
+        │
+        ▼
+  python etl/build_data.py --refresh        rebuild the newest season only
+        │
+        ▼
+  python etl/validate.py                    fail closed on a contract breach
+  python etl/test_refresh.py                fault-inject the guardrails
+  npm test && npm run build                 the app can still read it
+        │
+        ▼
+  pull request with the diff                ← the one human step
+        │
+        ▼
+  merge → Vercel deploys
+```
+
+### Only the newest season is rebuilt
+
+A full build re-derives six seasons and rewrites 1,727 files. A refresh rebuilds
+the newest season and **merges** it into the committed index, so finished
+seasons come out byte-identical. Run against the live 2026 season it touched
+three files:
+
+```
+Refresh: rebuilding 2026 only, merging into 1693 indexed games
+  2025: 285/285 played, complete  <- team layer
+  2026: 2/272 played, IN PROGRESS
+Done. 32 teams, 1694 games, 1.0 MB total
+```
+
+`merge_index` will not let a refresh delete history. A game in the old index
+that the rebuild no longer produces aborts the run rather than disappearing —
+nflverse withdrawing a game, or a half-finished download, would otherwise
+silently remove replays that team pages still link to.
+
+### Which season the figures describe is a rule, not a judgement call
+
+The team layer — rosters, stat lines, projections — describes exactly one
+season. Pointing it at a season two games old does not degrade gracefully. On
+11 September 2026, with two games played, it would have produced this:
+
+```
+teams with a 2026 record: 4 of 32     the other 28 dropped from the dashboard
+LA 0-1  projectedWins 0.60            next to a lastSeason record of 11-6
+```
+
+So `PROMOTE_MIN_PLAYED` (64 games, roughly four weeks) decides. Until a new
+season clears it, the team layer stays on the last complete one and the site
+says a newer season is under way. `--display-season` overrides by hand, and a
+separate guard refuses to publish a dashboard missing teams whatever the flag
+says.
+
+### Nothing is presented as something it is not
+
+`meta.json` — a new file, no established contract touched — records when the
+data was generated and how far through each season it is:
+
+```json
+{
+  "generatedAt": "2026-09-11T05:54:49Z",
+  "displaySeason": 2025,
+  "latestSeason": 2026,
+  "seasons": [{ "season": 2026, "scheduled": 272, "played": 2, "complete": false }]
+}
+```
+
+Three things read it:
+
+- **Every footer**: `Refreshed 4 minutes ago — 2026-09-11. Seasons 2020–2026.`
+  The wording is deliberately coarse; the exact instant is on the `<time>`
+  element. It is lazily loaded with no fallback, so a missing `meta.json`
+  removes the line and nothing else.
+- **The league page**, above the controls rather than in a footnote, because it
+  changes how every number below it should be read: _"Figures describe the
+  complete 2025 season. The 2026 season is under way, 2 of 272 games played; it
+  takes over here once enough of it has been played to describe."_ It appears
+  only when there is a distinction to explain.
+- **Team stat panels**: "From 1,048 regular-season scrimmage plays in 2025."
+  These are season-shaped figures and a reader who assumes they are this week's
+  is reading them wrong.
+
+If `--display-season` is used to force an unfinished season, the notice changes
+to say so outright — "2026 so far, 2 of 272 games played, so they are a partial
+season and not comparable with a finished one" — rather than letting partial
+and complete figures sit side by side unlabelled.
+
+### Why a pull request and not a push
+
+The data is the product; a bad refresh is a bad deploy. Everything up to the PR
+is automatic and fails closed — an invalid file, a dropped game, or an app that
+can no longer parse its own data all stop the run. The diff is the review: a
+handful of changed files is a normal week, and a larger one is a question worth
+answering first. A run that changes nothing opens no PR, because a weekly "no
+change" PR trains people to merge without looking.
+
+### Running it by hand
+
+```bash
+python etl/build_data.py --refresh                  # newest season, merged
+python etl/build_data.py --refresh --display-season 2026   # force the team layer
+python etl/validate.py --data public/data
+python etl/test_refresh.py
+```
+
+### What this does not do yet
+
+Unplayed fixtures are not published. The ETL emits games that have both a
+result and play-by-play, so a schedule of upcoming games does not exist in the
+JSON — `GameSummary.homeScore` is a required number, and an unplayed game has
+no score to put there. That work becomes necessary exactly when the promotion
+rule fires and the displayed season is one still being played, and it is a
+contract change (optional scores, so absent keeps meaning absent) rather than a
+new file. Until then there are no future fixtures in the displayed season to
+show.
 
 ## ETL instructions
 
@@ -533,7 +661,7 @@ appear here for identification only.
 - **A drive-level layer over the play-level one.** The ETL already knows possession and scoring;
   grouping plays into drives would let the replay skip forward a drive at a time, which is closer
   to how people actually talk about a game.
-- **Search across all 1,693 games** — by team, week, margin, or "games that swung more than 60
+- **Search across all 1,694 games** — by team, week, margin, or "games that swung more than 60
   points". `games-index.json` already exists, is validated, and has a typed accessor; no page
   loads it yet, because a team's own games travel inside its team file. At 27 KB gzipped this is
   a filter over one fetch, not a backend.

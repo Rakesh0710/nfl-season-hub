@@ -8,11 +8,12 @@
 import {
   ContractError,
   parseGame,
+  parseMeta,
   parseGamesIndex,
   parseTeam,
   parseTeamsIndex,
 } from '@/lib/contract'
-import type { Game, GameSummary, Team, TeamSummary } from '@/types/nfl'
+import type { Game, GameSummary, Meta, Team, TeamSummary } from '@/types/nfl'
 
 /** Root of the generated data, honouring Vite's base path. */
 const DATA_ROOT = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/data`
@@ -119,6 +120,16 @@ async function request<T>(path: string, parse: (value: unknown, at: string) => T
     }
     throw cause
   }
+}
+
+/**
+ * When the data was generated, and how far through each season it is.
+ *
+ * Small enough to fetch on every page — the whole file is under 400 bytes —
+ * and the only way the UI can tell a finished season from one two games old.
+ */
+export function getMeta(): Promise<Meta> {
+  return request('meta.json', parseMeta)
 }
 
 /** All 32 teams, for the league dashboard. */

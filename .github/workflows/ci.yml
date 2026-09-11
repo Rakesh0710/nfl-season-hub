@@ -69,6 +69,12 @@ jobs:
       - name: Validate against the contract
         run: python etl/validate.py --data public/data
 
+      # The refresh runs unattended on a schedule, so the two decisions it
+      # makes alone — which season to describe, and what happens to games
+      # already in the index — are fault-injected rather than trusted.
+      - name: Fault-inject the refresh guardrails
+        run: python etl/test_refresh.py
+
   e2e:
     name: End-to-end
     runs-on: ubuntu-latest
