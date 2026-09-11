@@ -294,24 +294,25 @@ any other origin passes through untouched.
 ## Testing
 
 ```
-216 unit and component tests   13 files   Vitest + React Testing Library
- 6 end-to-end specs            ×2 devices  Playwright (desktop Chrome, Pixel 5)
+255 unit and component tests   15 files   Vitest + React Testing Library
+ 12 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
 ```
 
 The tests are aimed at behaviour that could plausibly break, not at a coverage number.
 
-| Area                     | What is actually asserted                                                                                                                                                         |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| League sorting/filtering | every sort key and direction, the name tiebreak, immutability of the input, contradictory URL params                                                                              |
-| URL state                | round-trips, unknown values falling back, a division that contradicts its conference losing                                                                                       |
-| Data layer               | 404 → not-found, HTML-with-a-200 → not-found, truncated JSON → malformed, contract violation → malformed                                                                          |
-| Request cache            | concurrent callers share one fetch, failures are evicted and retryable                                                                                                            |
-| Contract                 | the real generated files parse; each failure mode names its path; extra fields are tolerated                                                                                      |
-| Replay control state     | seek-while-paused stays paused, seek-while-playing continues, Play rewinds a finished replay but resume does not, no two loops ever run, the frame handle is cancelled on unmount |
-| Frame pacing             | a 120-second frame (a backgrounded tab) advances 0.8 of a play, not the whole game                                                                                                |
-| Canvas drawing           | `indexAtOffset` inverts `xForIndex` for every play at three widths; beads appear only once passed; a non-finite cursor still draws                                                |
-| Colour                   | all 32 real team colours clear 3:1 on the card and on the bar track, and AA as badge text                                                                                         |
-| Components               | loading, error, retry, empty and not-found states; keyboard operation of the whole transport                                                                                      |
+| Area                     | What is actually asserted                                                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| League sorting/filtering | every sort key and direction, the name tiebreak, immutability of the input, contradictory URL params                                                                                 |
+| URL state                | round-trips, unknown values falling back, a division that contradicts its conference losing                                                                                          |
+| Data layer               | 404 → not-found, HTML-with-a-200 → not-found, truncated JSON → malformed, contract violation → malformed                                                                             |
+| Request cache            | concurrent callers share one fetch, failures are evicted and retryable                                                                                                               |
+| Contract                 | the real generated files parse; each failure mode names its path; extra fields are tolerated                                                                                         |
+| Replay control state     | seek-while-paused stays paused, seek-while-playing continues, Play rewinds a finished replay but resume does not, no two loops ever run, the frame handle is cancelled on unmount    |
+| Frame pacing             | a 120-second frame (a backgrounded tab) advances 0.8 of a play, not the whole game                                                                                                   |
+| Canvas drawing           | `indexAtOffset` inverts `xForIndex` for every play at three widths; beads appear only once passed; a non-finite cursor still draws                                                   |
+| Colour                   | all 32 real team colours clear 3:1 on the card and on the bar track, and AA as badge text                                                                                            |
+| Comparison               | the leader is inverted for defensive metrics, an exact tie names no one, meetings are symmetric in their arguments and never include a third team, and the two series records mirror |
+| Components               | loading, error, retry, empty and not-found states; keyboard operation of the whole transport                                                                                         |
 
 Two examples of tests that exist because the bug happened:
 
@@ -334,7 +335,7 @@ for.
 
 | Job      | Steps                                                                                     |
 | -------- | ----------------------------------------------------------------------------------------- |
-| `verify` | `npm ci` → typecheck → lint → format check → 216 tests → production build → bundle report |
+| `verify` | `npm ci` → typecheck → lint → format check → 255 tests → production build → bundle report |
 | `data`   | `etl/validate.py` against the committed JSON (stdlib only; no ETL run needed)             |
 | `e2e`    | Playwright against the built app, report uploaded as an artifact                          |
 
@@ -347,14 +348,22 @@ headless Chrome, desktop preset and the default mobile preset (4× CPU throttlin
 4G). Machine benchmark index 3057. Lighthouse is not a dependency of this project — it is run
 with `npx` when a measurement is wanted, so nobody pays 21 MB of install for a number.
 
-| Page   | Form    | Perf | A11y | Best practices | SEO | FCP   | LCP   | TBT   | CLS   | Page weight |
-| ------ | ------- | ---: | ---: | -------------: | --: | ----- | ----- | ----- | ----- | ----------: |
-| League | desktop |  100 |  100 |            100 | 100 | 0.3 s | 0.4 s | 0 ms  | 0.046 |     265 KiB |
-| Team   | desktop |   99 |  100 |            100 | 100 | 0.4 s | 0.5 s | 0 ms  | 0.069 |     171 KiB |
-| Game   | desktop |  100 |  100 |            100 | 100 | 0.3 s | 0.3 s | 0 ms  | 0.005 |     124 KiB |
-| League | mobile  |  100 |  100 |            100 | 100 | 1.2 s | 1.4 s | 0 ms  | 0     |     222 KiB |
-| Team   | mobile  |  100 |  100 |            100 | 100 | 1.3 s | 1.7 s | 20 ms | 0     |     171 KiB |
-| Game   | mobile  |  100 |  100 |            100 | 100 | 1.2 s | 1.2 s | 0 ms  | 0.033 |     124 KiB |
+| Page    | Form    | Perf | A11y | Best practices | SEO | FCP   | LCP   | TBT   | CLS   | Page weight |
+| ------- | ------- | ---: | ---: | -------------: | --: | ----- | ----- | ----- | ----- | ----------: |
+| League  | desktop |  100 |  100 |            100 | 100 | 0.3 s | 0.4 s | 0 ms  | 0.046 |     265 KiB |
+| Team    | desktop |   99 |  100 |            100 | 100 | 0.4 s | 0.5 s | 0 ms  | 0.069 |     171 KiB |
+| Game    | desktop |  100 |  100 |            100 | 100 | 0.3 s | 0.3 s | 0 ms  | 0.005 |     124 KiB |
+| League  | mobile  |  100 |  100 |            100 | 100 | 1.2 s | 1.4 s | 0 ms  | 0     |     222 KiB |
+| Team    | mobile  |  100 |  100 |            100 | 100 | 1.3 s | 1.7 s | 20 ms | 0     |     171 KiB |
+| Game    | mobile  |  100 |  100 |            100 | 100 | 1.2 s | 1.2 s | 0 ms  | 0.033 |     124 KiB |
+| Compare | desktop |  100 |  100 |            100 | 100 | 0.4 s | 0.4 s | 0 ms  | 0     |     150 KiB |
+| Compare | mobile  |   96 |  100 |            100 | 100 | 1.4 s | 2.3 s | 0 ms  | 0     |     150 KiB |
+
+A loaded comparison is the slowest route on mobile — 96, LCP 2.3 s — because it is the only page
+that fetches the 27 KiB game index, and it does so to show six seasons of head-to-head rather than
+the two meetings a team file could supply. That is the trade named when the feature was scoped,
+and it is worth it. Its layout shift is 0, the best in the app, because its skeleton is sized from
+the real thing rather than sketched.
 
 The same build measured on `vite preview` over localhost scores one to two points lower on mobile
 (FCP 1.6 s rather than 1.2 s): the CDN's brotli and HTTP/2 are doing real work, and a local
@@ -473,7 +482,7 @@ npm run dev            # http://localhost:5173
 npm run typecheck      # tsc -b, four projects: app, node, tests, e2e
 npm run lint           # oxlint
 npm run format         # prettier --write .
-npm test               # Vitest, 216 tests
+npm test               # Vitest, 255 tests
 npm run test:coverage  # with a v8 coverage report
 npm run e2e            # Playwright (builds and serves the app itself)
 npm run build          # typecheck + production build
