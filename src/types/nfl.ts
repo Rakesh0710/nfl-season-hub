@@ -71,7 +71,7 @@ export interface TeamStatLine {
   plays: number
 }
 
-/** One entry in `games-index.json` — the game browser, all seasons. */
+/** One entry in `games-index.json`, and of a team's own `games` list. */
 export interface GameSummary {
   gameId: string
   season: number

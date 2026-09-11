@@ -134,12 +134,12 @@ even a `"comment"` key fails the build. The reasoning therefore lives here:
 
 Four file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
 
-| File                  | Count | Size (raw / gzip)    | Contents                                              |
-| --------------------- | ----: | -------------------- | ----------------------------------------------------- |
-| `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection  |
-| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,693 games: ids, dates, scores, type                 |
-| `team/<ID>.json`      |    32 | ~23 KB               | roster, depth chart, draft class, splits, games       |
-| `game/<GAME_ID>.json` | 1,693 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob |
+| File                  | Count | Size (raw / gzip)    | Contents                                                |
+| --------------------- | ----: | -------------------- | ------------------------------------------------------- |
+| `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection    |
+| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,693 games: ids, dates, scores, type (not yet fetched) |
+| `team/<ID>.json`      |    32 | ~23 KB               | roster, depth chart, draft class, splits, games         |
+| `game/<GAME_ID>.json` | 1,693 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob   |
 
 A game averages 6.8 KB over the wire, which is why a replay can load on demand with no backend.
 
@@ -324,16 +324,27 @@ for.
 
 Everything below is measured, not estimated. Lighthouse 13.4.1 against the production build served
 by `vite preview` on localhost, headless Chrome, desktop preset and the default mobile preset
-(4× CPU throttling, simulated slow 4G). Machine benchmark index 2964.
+(4× CPU throttling, simulated slow 4G). Machine benchmark index 3035. Lighthouse is not a
+dependency of this project — it is run with `npx` when a measurement is wanted, so nobody pays
+21 MB of install for a number.
 
 | Page   | Form    | Perf | A11y | Best practices | SEO | FCP   | LCP   | TBT   | CLS   | Page weight |
 | ------ | ------- | ---: | ---: | -------------: | --: | ----- | ----- | ----- | ----- | ----------: |
 | League | desktop |  100 |  100 |            100 | 100 | 0.4 s | 0.4 s | 0 ms  | 0.046 |     262 KiB |
 | Team   | desktop |   99 |  100 |            100 | 100 | 0.4 s | 0.5 s | 0 ms  | 0.069 |     168 KiB |
-| Game   | desktop |  100 |  100 |            100 | 100 | 0.4 s | 0.4 s | 0 ms  | 0.005 |     122 KiB |
+| Game   | desktop |  100 |  100 |            100 | 100 | 0.4 s | 0.7 s | 0 ms  | 0.005 |     122 KiB |
 | League | mobile  |   99 |  100 |            100 | 100 | 1.6 s | 2.0 s | 0 ms  | 0     |     219 KiB |
-| Team   | mobile  |   97 |  100 |            100 | 100 | 1.7 s | 2.4 s | 10 ms | 0     |     168 KiB |
-| Game   | mobile  |   99 |  100 |            100 | 100 | 1.5 s | 1.7 s | 0 ms  | 0.033 |     122 KiB |
+| Team   | mobile  |   98 |  100 |            100 | 100 | 1.7 s | 2.0 s | 20 ms | 0     |     168 KiB |
+| Game   | mobile  |   99 |  100 |            100 | 100 | 1.6 s | 1.7 s | 0 ms  | 0.033 |     122 KiB |
+
+These are one run, and the run-to-run spread is worth stating rather than hiding: across two runs
+of the same build the scores moved by at most one point, game/desktop LCP sat between 0.4 s and
+0.7 s, and team/mobile between 2.0 s and 2.4 s. Reproduce with:
+
+```bash
+npm run build && npm run preview -- --port 4173
+npx lighthouse http://localhost:4173/ --preset=desktop --chrome-flags="--headless=new" --view
+```
 
 ### Frame rate
 
@@ -341,7 +352,7 @@ by `vite preview` on localhost, headless Chrome, desktop preset and the default 
 IND at MIN, 218 plays, overtime), in the production build:
 
 ```
-median frame  16.70 ms      p95  16.80 ms      worst  16.80 ms
+median frame  16.70 ms      p95  16.70 ms      worst  16.80 ms
 frames over 33 ms (a dropped frame): 0 / 239
 long tasks (>50 ms) during 3 s of playback: 0
 ```
@@ -354,9 +365,9 @@ more in blitting than it saved, and not done.
 ### Bundle
 
 ```
-index      265.52 kB   84.40 kB gzip   React, React Router, the shell — every page
+index      265.52 kB   84.41 kB gzip   React, React Router, the shell — every page
 league      76.31 kB   26.67 kB gzip   Framer Motion — League and Team only
-CSS         30.25 kB    6.45 kB gzip
+CSS         29.92 kB    6.39 kB gzip
 GamePage    17.81 kB    6.27 kB gzip   the replay engine — only on a game page
 TeamPage    16.33 kB    4.76 kB gzip
 useAsync     7.68 kB    3.12 kB gzip   data layer + runtime contract
@@ -365,8 +376,9 @@ football     2.53 kB    1.25 kB gzip
 ```
 
 **Lazy loading, verified from the network log rather than from the config:** loading the league
-dashboard requests `index`, `LeaguePage`, `useAsync` and `league` — 114 KiB of JavaScript — and
-neither `GamePage` nor `TeamPage`. The replay engine is downloaded when, and only when, someone
+dashboard makes 29 requests, four of them JavaScript — `index` (82 KiB), `league` (26 KiB),
+`LeaguePage` and `useAsync` (3 KiB each), 115 KiB in total — and neither `GamePage` nor
+`TeamPage`. The replay engine is downloaded when, and only when, someone
 opens a game.
 
 **What the runtime contract costs.** Validating the largest file the app loads — the 239 KB,
@@ -482,7 +494,9 @@ appear here for identification only.
   grouping plays into drives would let the replay skip forward a drive at a time, which is closer
   to how people actually talk about a game.
 - **Search across all 1,693 games** — by team, week, margin, or "games that swung more than 60
-  points". The games index is 239 KB and already loaded; this is a filter, not a backend.
+  points". `games-index.json` already exists, is validated, and has a typed accessor; no page
+  loads it yet, because a team's own games travel inside its team file. At 27 KB gzipped this is
+  a filter over one fetch, not a backend.
 - **Precompute the replay's per-play deltas in the ETL** so the client stops recomputing the
   chart series on every mount. Currently 0.05 ms for a typical game, so this is a correctness-of-
   ownership argument rather than a performance one.

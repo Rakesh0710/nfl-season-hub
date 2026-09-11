@@ -176,8 +176,9 @@ describe('the play context', () => {
   it('drops the down-and-distance line for a play that has no down', async () => {
     mount()
     await userEvent.click(transport(/^pause$/i))
-    // Play 1 is a kickoff: no down, so no situation line and no placeholder.
-    expect(screen.queryByText(/&/)).not.toBeInTheDocument()
+    // Play 1 is a kickoff: it has no down, so the line carries possession only
+    // — no down-and-distance, and no dash standing in for one.
+    expect(screen.queryByText(/\d(st|nd|rd|th) &/)).not.toBeInTheDocument()
     expect(screen.getByText('ATL ball')).toBeInTheDocument()
   })
 

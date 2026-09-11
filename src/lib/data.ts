@@ -131,7 +131,16 @@ export function getTeam(id: string): Promise<Team> {
   return request(`team/${encodeURIComponent(id)}.json`, parseTeam)
 }
 
-/** Every game across all seasons, for the game browser. */
+/**
+ * Every game across all seasons.
+ *
+ * No page loads this yet — a team's own games travel inside its team file, so
+ * nothing in the current UI needs the whole league's schedule. It is kept
+ * because the file is not speculative: `etl/validate.py` uses it to prove that
+ * every game a team references resolves to a generated file, and both
+ * validators check it on every run. This is the typed door to it, and the
+ * input a cross-season game search would start from.
+ */
 export function getGamesIndex(): Promise<GameSummary[]> {
   return request('games-index.json', parseGamesIndex)
 }

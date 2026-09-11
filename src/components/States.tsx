@@ -1,27 +1,16 @@
 /**
- * The three things every data-backed screen has to say: still working,
- * something broke, or there is nothing here. Defined once so Stages 3-5
- * inherit consistent behaviour instead of reinventing it per page.
+ * The dead end a data-backed screen has to be able to show.
+ *
+ * This file once also held a spinner and a generic empty state. Both are gone:
+ * loading is a route-shaped skeleton (see `Skeletons.tsx`), because a spinner
+ * that is replaced by a differently-shaped page is two waiting states for one
+ * click; and an empty result is specific enough to each screen — "no teams
+ * match these filters", with the filters to clear — that a shared component
+ * could only have said less.
  */
 
 import { Link } from 'react-router-dom'
 import type { DataError } from '@/lib/data'
-
-export function Loading({ label = 'Loading' }: { label?: string }) {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="flex items-center gap-3 py-16 text-sm text-neutral-400"
-    >
-      <span
-        aria-hidden
-        className="size-4 animate-spin rounded-full border-2 border-neutral-700 border-t-emerald-400"
-      />
-      {label}…
-    </div>
-  )
-}
 
 /** A dead end the user can act on: bad URL, missing file, network failure. */
 export function ErrorState({ error, retry }: { error: DataError; retry?: () => void }) {
@@ -57,8 +46,4 @@ export function ErrorState({ error, retry }: { error: DataError; retry?: () => v
       </div>
     </div>
   )
-}
-
-export function Empty({ message }: { message: string }) {
-  return <p className="py-16 text-sm text-neutral-400">{message}</p>
 }
