@@ -160,15 +160,15 @@ Seven file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
 
 | File                  | Count | Size (raw / gzip)    | Contents                                                             |
 | --------------------- | ----: | -------------------- | -------------------------------------------------------------------- |
-| `meta.json`           |     1 | 0.4 KB               | when the data was generated, and how complete each season is         |
+| `meta.json`           |     1 | 0.5 KB               | when the data was generated, and how complete each season is         |
 | `teams-index.json`    |     1 | 8 KB / 1.4 KB        | 32 teams: identity, colours, last season, projection                 |
-| `games-index.json`    |     1 | 239 KB / 27 KB       | 1,695 games: ids, dates, scores, type (not yet fetched)              |
-| `team/<ID>.json`      |    32 | 37 KB / 6.0 KB       | roster, depth chart, draft class, splits, ~105 games                 |
-| `game/<GAME_ID>.json` | 1,695 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob                |
-| `player/<ID>.json`    | 2,274 | 1.4 KB / 0.5 KB      | bio, headshot, career seasons, and the displayed season week by week |
-| `players-index.json`  |     1 | 370 KB / 69 KB       | the search index: name, position, team, headshot, career games       |
+| `games-index.json`    |     1 | 239 KB / 26 KB       | 1,695 games: ids, dates, scores, type (not yet fetched)              |
+| `team/<ID>.json`      |    32 | 38 KB / 5.9 KB       | roster, depth chart, draft class, splits, ~105 games                 |
+| `game/<GAME_ID>.json` | 1,695 | 45.9 KB / **6.6 KB** | every play: clock, score, down, description, win prob                |
+| `player/<ID>.json`    | 2,274 | 1.5 KB / 0.5 KB      | bio, headshot, career seasons, and the displayed season week by week |
+| `players-index.json`  |     1 | 394 KB / 73 KB       | the search index: name, position, team, headshot, career games       |
 
-A game averages 6.8 KB over the wire, which is why a replay can load on demand with no backend.
+A game averages 6.6 KB over the wire, which is why a replay can load on demand with no backend.
 
 A team file carries **every** season's games — about 105, not the 17 of one season — while the
 rest of it describes a single season. That asymmetry is deliberate: the replays are the point of
@@ -312,8 +312,8 @@ any other origin passes through untouched.
 ## Testing
 
 ```
-337 unit and component tests   19 files   Vitest + React Testing Library
- 30 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
+357 unit and component tests   20 files   Vitest + React Testing Library
+ 31 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
 ```
 
 The tests are aimed at behaviour that could plausibly break, not at a coverage number.
@@ -331,6 +331,7 @@ The tests are aimed at behaviour that could plausibly break, not at a coverage n
 | Colour                   | all 32 real team colours clear 3:1 on the card and on the bar track, and AA as badge text                                                                                            |
 | Comparison               | the leader is inverted for defensive metrics, an exact tie names no one, meetings are symmetric in their arguments and never include a third team, and the two series records mirror |
 | Components               | loading, error, retry, empty and not-found states; keyboard operation of the whole transport                                                                                         |
+| Player search            | ranking tiers and the namesake tiebreak against the real index; accented names typed plainly; the URL restoring box, filters and results; both headshot delivery types resized       |
 
 Two examples of tests that exist because the bug happened:
 
@@ -353,7 +354,7 @@ for.
 
 | Job      | Steps                                                                                     |
 | -------- | ----------------------------------------------------------------------------------------- |
-| `verify` | `npm ci` → typecheck → lint → format check → 337 tests → production build → bundle report |
+| `verify` | `npm ci` → typecheck → lint → format check → 357 tests → production build → bundle report |
 | `data`   | `etl/validate.py` against the committed JSON (stdlib only; no ETL run needed)             |
 | `e2e`    | Playwright against the built app, report uploaded as an artifact                          |
 
@@ -500,7 +501,7 @@ npm run dev            # http://localhost:5173
 npm run typecheck      # tsc -b, four projects: app, node, tests, e2e
 npm run lint           # oxlint
 npm run format         # prettier --write .
-npm test               # Vitest, 337 tests
+npm test               # Vitest, 357 tests
 npm run test:coverage  # with a v8 coverage report
 npm run e2e            # Playwright (builds and serves the app itself)
 npm run build          # typecheck + production build
@@ -517,7 +518,7 @@ nflverse.
 
 ### Player pages, and who does not get one
 
-`player/<id>.json` exists for players the dataset records production for — 2,274 of the 3,135 on a
+`player/<id>.json` exists for players the dataset records production for — 2,274 of the 3,137 on a
 2025 roster. The other 863 have no stat row in any season — 346 of the 550 offensive linemen
 among them, because nflverse records a statistic for a lineman only when he catches a pass or
 recovers a fumble. The remaining 204 linemen do have pages, which is why the code says "players
@@ -531,7 +532,7 @@ would have hidden both, and would have been wrong for every two-way player in th
 
 **Finding them.** The profiles shipped before a way in did, reachable only by opening a team and
 scrolling to its fourth section — two thousand pages behind a path nobody would guess. `/players`
-is the way in: type a name and filter by team or position, all in the browser against a 69 KB
+is the way in: type a name and filter by team or position, all in the browser against a 73 KB
 index. Ranking is by surname prefix first and then by career games played, because two players
 share a surname often enough to matter and "jefferson" was returning Jermar above Justin.
 
@@ -540,12 +541,24 @@ the URL looks tidy and drops characters — `setSearchParams` is a navigation, s
 keystrokes each read a filter from a render that has not happened yet. Typing "garrett" left "t"
 in the box. The two selects are still URL-driven; one change per interaction cannot race itself.
 
-**Headshots were the surprise.** nflverse points at the NFL's Cloudinary CDN, where the stored
-images are **3–6 MB PNGs** — one headshot is larger than every script, stylesheet and data file
-this site serves put together. They sit behind an `f_auto,q_auto` transformation, and appending a
-width to it resizes on their CDN: measured across four players, **3–5 MB becomes 6 KB at 160px and
-20 KB at 320px**. `headshotAt` does that, and returns anything not on that CDN untouched. The
-end-to-end suite fails if a headshot ever arrives over 200 KB.
+**Headshots were the surprise, twice.** nflverse points at the NFL's Cloudinary CDN, where the
+stored images are **3–6 MB PNGs** — one headshot is larger than every script, stylesheet and data
+file this site serves put together. They sit behind an `f_auto,q_auto` transformation, and
+appending a width to it resizes on their CDN: measured across four players, **3–5 MB becomes 6 KB
+at 160px and 20 KB at 320px**. `headshotAt` does that, and returns anything not on that CDN
+untouched.
+
+The second surprise was that it matched one of the two delivery types in the data. 55 of the 2,269
+stored URLs come from `/image/private/` rather than `/image/upload/`, and those went out at their
+stored size: **A.J. Brown's 36-pixel thumbnail was a 3.8 MB PNG**, and the default `/players`
+listing carried **775 KB** of images. The same transform works on both paths — `w_72` makes that
+image 2.5 KB — so the repair was one regular expression. Why it shipped is the more useful part:
+`headshotAt` had no unit test at all, and the end-to-end check ran against `?q=allen`, a search
+narrow enough to contain none of the 55. It now loads the unfiltered listing and fails over 30 KB
+for a thumbnail or 400 KB for the page, `validate.py` rejects any stored headshot the frontend
+cannot resize, and `headshotAt` has tests of its own. Measured on a Pixel 5 viewport after the
+fix: the default listing fetches **51 headshots for 80 KB**, largest 2.3 KB, and A.J. Brown's
+profile went from **3.8 MB to 6.1 KB**.
 
 ## Keeping the data current
 

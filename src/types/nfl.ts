@@ -244,9 +244,9 @@ export interface PlayerSummary {
 /**
  * `player/<id>.json` — one per player with recorded production.
  *
- * Deliberately not one per rostered player. Of 3,135 players on a 2025 roster
- * 1,115 have no stat row in any season, and a page for them would be their
- * roster row with a photograph on it.
+ * Deliberately not one per rostered player. At the last refresh, 863 of the
+ * 3,137 players on a 2025 roster had no stat row in any season, and a page for
+ * them would be their roster row with a photograph on it.
  */
 export interface PlayerProfile {
   id: string

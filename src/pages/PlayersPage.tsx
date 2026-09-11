@@ -6,9 +6,12 @@
  * thousand pages behind a path nobody would guess is the same as no pages, so
  * this is the way in: type a name.
  *
- * All 2,274 are filtered in the browser. There is no server to ask, the index
- * is 71 KB gzipped, and filtering an array of that size is faster than the
- * keystroke that triggered it — a debounce would only add latency.
+ * All of them are filtered in the browser. There is no server to ask, the
+ * index is 75 KB gzipped, and filtering an array of that size is faster than
+ * the keystroke that triggered it — a debounce would only add latency.
+ *
+ * Nothing here writes a count down: the visible totals come from the file,
+ * because the data refreshes weekly and prose does not.
  */
 
 import { useMemo, useState } from 'react'
@@ -24,9 +27,9 @@ import type { PlayerSummary, TeamSummary } from '@/types/nfl'
 /**
  * How many results are drawn at once.
  *
- * Every one carries a headshot, and 2,274 of them would ask the browser for
- * two thousand images to satisfy a search someone is still typing. The count
- * above the list always reports the true total.
+ * Every one carries a headshot, and rendering them all would ask the browser
+ * for two thousand images to satisfy a search someone is still typing. The
+ * count above the list always reports the true total.
  */
 const SHOWN = 60
 
@@ -82,6 +85,7 @@ export default function PlayersPage() {
   if (state.status === 'error') return <ErrorState error={state.error} retry={state.retry} />
 
   const { teams } = state.data
+  const total = state.data.players.length
   const byId = new Map(teams.map((team) => [team.id, team]))
   const positions = positionsIn(state.data.players)
 
@@ -89,10 +93,12 @@ export default function PlayersPage() {
     <div>
       <header className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Players</h1>
+        {/* Counted from the file rather than written down: the data refreshes
+            weekly, and a sentence with a number in it goes stale silently. */}
         <p className="mt-1 max-w-prose text-sm text-neutral-400">
-          Every player the dataset records production for — 2,274 of the 3,137 on a roster.
-          Offensive linemen are mostly missing, because nflverse records a statistic for one only
-          when he catches a pass or recovers a fumble.
+          Every player nflverse records production for — {total.toLocaleString()} of them. Offensive
+          linemen are mostly missing, because the dataset records a statistic for one only when he
+          catches a pass or recovers a fumble.
         </p>
       </header>
 
@@ -135,11 +141,12 @@ export default function PlayersPage() {
       </div>
 
       <h2 aria-live="polite" className="mt-4 text-sm font-normal text-neutral-400">
-        {describeSearch(filter, results.length, state.data.players.length)}
+        {describeSearch(filter, results.length, total)}
       </h2>
 
       {results.length === 0 ? (
         <EmptyState
+          total={total}
           onReset={() => {
             setQuery('')
             mirror(new URLSearchParams())
@@ -147,6 +154,16 @@ export default function PlayersPage() {
         />
       ) : (
         <>
+          {/* Above the list, not below it. The heading counts every match and
+              the list holds sixty; someone reading top to bottom — a screen
+              reader especially — needs that said before the list, not after
+              they have walked it. */}
+          {results.length > SHOWN && (
+            <p className="mt-2 text-xs text-muted">
+              Showing the first {SHOWN} of {results.length.toLocaleString()}. Keep typing, or filter
+              by team or position, to narrow it.
+            </p>
+          )}
           <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {results.slice(0, SHOWN).map((player) => (
               <li key={player.id}>
@@ -154,12 +171,6 @@ export default function PlayersPage() {
               </li>
             ))}
           </ul>
-          {results.length > SHOWN && (
-            <p className="mt-4 text-xs text-muted">
-              Showing the first {SHOWN} of {results.length}. Keep typing, or filter by team or
-              position, to narrow it.
-            </p>
-          )}
         </>
       )}
     </div>
@@ -239,12 +250,12 @@ function Result({ player, team }: { player: PlayerSummary; team: TeamSummary | u
   )
 }
 
-function EmptyState({ onReset }: { onReset: () => void }) {
+function EmptyState({ total, onReset }: { total: number; onReset: () => void }) {
   return (
     <div className="mt-6 rounded-xl border border-dashed border-neutral-800 py-16 text-center">
       <p className="text-sm text-neutral-300">No players match.</p>
       <p className="mx-auto mt-2 max-w-prose text-xs text-muted">
-        Only players with recorded production have a page — 2,274 of the 3,137 on a roster. Most
+        Only players with recorded production have a page, and {total.toLocaleString()} do. Most
         offensive linemen are not here: the dataset measures nothing individual for them.
       </p>
       <button

@@ -169,9 +169,10 @@ export function getGamesIndex(): Promise<GameSummary[]> {
 /**
  * Every player with a profile, for the search.
  *
- * Fetched only by `/players`. It carries headshots, which doubles it from 32 KB
- * to 71 KB gzipped — paid because a list of 2,274 names is scanned by face, and
- * the thumbnails themselves load lazily so only visible rows fetch one.
+ * Fetched only by `/players`. It carries headshots, which takes it from 35 KB
+ * to 75 KB gzipped — paid because a list of two thousand names is scanned by
+ * face, and the thumbnails themselves load lazily so only visible rows fetch
+ * one. Measured on the generated file; it grows a little each refresh.
  */
 export function getPlayersIndex(): Promise<PlayerSummary[]> {
   return request('players-index.json', parsePlayersIndex)

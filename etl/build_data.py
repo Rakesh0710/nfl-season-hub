@@ -589,10 +589,10 @@ def build_players(
     One file per player who has actually done something measurable.
 
     A page for a player with no recorded production would be their roster row
-    with a photograph on it, which is not worth a route. Of 3,135 players on a
-    2025 roster, 1,115 have no stat row in any season — 289 of them offensive
-    linemen, whose contribution this dataset simply does not measure. They get
-    no page and the roster does not link them.
+    with a photograph on it, which is not worth a route. At the last refresh,
+    863 of the 3,137 rostered players had no stat row in any season — 346 of
+    them offensive linemen, whose contribution this dataset simply does not
+    measure. They get no page and the roster does not link them.
     """
     stats = nfl.load_player_stats(seasons=seasons).filter(pl.col("season_type") == "REG")
     columns = set(stats.columns)

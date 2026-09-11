@@ -124,12 +124,12 @@ describe('positionsIn', () => {
 
 describe('describeSearch', () => {
   it('says what was searched for, and what came back', () => {
-    expect(describeSearch(filter(), 2274, 2274)).toBe('All 2274 players.')
+    expect(describeSearch(filter(), 2274, 2274)).toBe('All 2,274 players.')
     expect(describeSearch(filter({ query: 'allen' }), 6, 2274)).toBe(
-      '6 of 2274 players matching “allen”.',
+      '6 of 2,274 players matching “allen”.',
     )
     expect(describeSearch(filter({ team: 'KC', position: 'QB' }), 3, 2274)).toBe(
-      '3 of 2274 QBs for KC.',
+      '3 of 2,274 QBs for KC.',
     )
     expect(describeSearch(filter({ query: 'zzz' }), 0, 2274)).toBe('No players matching “zzz”.')
   })

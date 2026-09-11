@@ -3,7 +3,9 @@
  *
  * Only exists for players the dataset records production for. A page that
  * repeated a roster row with a photograph on it would not be worth a route, so
- * of 3,135 rostered players 2,274 have one and the rest are not linked.
+ * 2,274 of the 3,137 rostered players have one and the rest are not linked.
+ * Both counts move with the weekly refresh; `validate.py` re-checks the rule,
+ * not the numbers.
  *
  * Which numbers appear is decided by which numbers exist, not by the position
  * in the file — see `lib/playerStats.ts`. Mahomes has a tackle and a reception

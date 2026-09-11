@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { logoAt } from '@/lib/logos'
+import { headshotAt, logoAt } from '@/lib/logos'
 
 const LOGO = 'https://a.espncdn.com/i/teamlogos/nfl/500/ari.png'
 
@@ -34,5 +34,53 @@ describe('logoAt', () => {
 
   it('returns an unparseable value rather than throwing', () => {
     expect(logoAt('', 40)).toBe('')
+  })
+})
+
+/**
+ * Every one of these is a real URL shape out of `players-index.json`.
+ *
+ * The `private` case shipped broken: 55 of the 2,269 stored headshots use that
+ * delivery type, `headshotAt` matched only `upload`, and so A.J. Brown's
+ * thumbnail was his stored 3.8 MB PNG. There was no test here at all, which is
+ * why nobody noticed.
+ */
+describe('headshotAt', () => {
+  const UPLOAD = 'https://static.www.nfl.com/image/upload/f_auto,q_auto/league/abc123'
+  const PRIVATE = 'https://static.www.nfl.com/image/private/f_auto,q_auto/league/abc123'
+
+  it('adds the drawn width to the transformation, at twice the CSS size', () => {
+    expect(headshotAt(UPLOAD, 36)).toBe(
+      'https://static.www.nfl.com/image/upload/f_auto,q_auto,w_72/league/abc123',
+    )
+  })
+
+  it('resizes a private-delivery headshot too, keeping its delivery type', () => {
+    expect(headshotAt(PRIVATE, 96)).toBe(
+      'https://static.www.nfl.com/image/private/f_auto,q_auto,w_192/league/abc123',
+    )
+  })
+
+  it('leaves an asset path with slashes in it intact', () => {
+    expect(headshotAt(`${UPLOAD}/2025/headshot`, 36)).toContain('/league/abc123/2025/headshot')
+  })
+
+  it('passes through anything not on that CDN', () => {
+    const elsewhere = 'https://example.test/headshots/mahomes.png'
+    expect(headshotAt(elsewhere, 36)).toBe(elsewhere)
+  })
+
+  it('does not treat a lookalike host as the CDN', () => {
+    const spoof = 'https://static.www.nfl.com.example.test/image/upload/f_auto,q_auto/league/abc'
+    expect(headshotAt(spoof, 36)).toBe(spoof)
+  })
+
+  it('passes through a CDN URL that already carries a width, rather than doubling it', () => {
+    const sized = 'https://static.www.nfl.com/image/upload/f_auto,q_auto,w_72/league/abc123'
+    expect(headshotAt(sized, 36)).toBe(sized)
+  })
+
+  it('returns an empty value rather than building a URL out of nothing', () => {
+    expect(headshotAt('', 36)).toBe('')
   })
 })

@@ -44,6 +44,14 @@ TEAM = TEAM_SUMMARY | {
     "roster": (list, True), "depthChart": (dict, True), "draftClass": (list, True),
     "stats": (dict, True), "games": (list, True),
 }
+# A headshot the frontend cannot resize is a headshot served at its stored size,
+# and the stored sizes are 3-6 MB PNGs. `headshotAt` in src/lib/logos.ts appends
+# a width to this exact transformation; anything else it passes through
+# untouched, so a new delivery type must fail here rather than on a phone.
+HEADSHOT = re.compile(
+    r"^https://static\.www\.nfl\.com/image/(?:upload|private)/f_auto,q_auto/.+$"
+)
+
 PLAYER = {
     "id": (str, True), "name": (str, True), "position": (str, True),
     "number": (int, False), "age": (int, False),
@@ -144,6 +152,13 @@ def load(path: Path):
     data = json.loads(raw)
     json.dumps(data, allow_nan=False)  # raises if anything is unserialisable
     return data
+
+
+def check_headshot(where: str, obj: dict) -> None:
+    """A stored headshot the frontend can ask the CDN to resize."""
+    url = obj.get("headshot")
+    if url is not None and not HEADSHOT.match(url):
+        fail(f"{where}: headshot {url!r} is a shape src/lib/logos.ts cannot resize")
 
 
 def check_contract_drift(types_file: Path) -> None:
@@ -447,6 +462,7 @@ def main() -> int:
             })
             if entry.get("games", 0) < 1:
                 fail(f"{where}: games {entry.get('games')!r} — an indexed player has played")
+            check_headshot(where, entry)
             index_ids.add(entry.get("id"))
 
     # ---------- player layer ----------
@@ -484,6 +500,7 @@ def main() -> int:
             fail(f"{where}: id {player.get('id')!r} does not match the filename")
         if player.get("team") not in team_ids:
             fail(f"{where}: team {player.get('team')!r} is not a known team")
+        check_headshot(where, player)
 
         seasons = player.get("seasons", [])
         if not seasons:

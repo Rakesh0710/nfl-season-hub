@@ -106,6 +106,6 @@ export function describeSearch(filter: PlayerFilter, shown: number, total: numbe
     .join(' ')
 
   if (shown === 0) return `No ${scope}.`
-  if (shown === total) return `All ${total} ${scope}.`
-  return `${shown} of ${total} ${scope}.`
+  if (shown === total) return `All ${total.toLocaleString()} ${scope}.`
+  return `${shown.toLocaleString()} of ${total.toLocaleString()} ${scope}.`
 }

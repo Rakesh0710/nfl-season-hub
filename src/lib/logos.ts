@@ -39,8 +39,16 @@ export function logoAt(url: string, cssPixels: number): string {
   return `${ESPN_ORIGIN}/combiner/i?img=${path}&w=${size}&h=${size}`
 }
 
-/** The NFL's image CDN, which serves the player headshots nflverse points at. */
-const NFL_IMAGES = 'https://static.www.nfl.com/image/upload/'
+/**
+ * The NFL's image CDN, which serves the player headshots nflverse points at.
+ *
+ * Two delivery types appear in the data — `upload` for 2,214 players and
+ * `private` for 55 — and both take the same transformation. Matching only the
+ * first left A.J. Brown's stored 3.8 MB PNG going down the wire for a 36-pixel
+ * thumbnail; `w_72` makes the same image 2.5 KB.
+ */
+const HEADSHOT =
+  /^(https:\/\/static\.www\.nfl\.com\/image\/(?:upload|private)\/)f_auto,q_auto\/(.+)$/
 
 /**
  * A player headshot at the size it will be drawn.
@@ -55,8 +63,11 @@ const NFL_IMAGES = 'https://static.www.nfl.com/image/upload/'
  * carrying the transformation this appends to, is returned untouched.
  */
 export function headshotAt(url: string, cssPixels: number): string {
-  const marker = `${NFL_IMAGES}f_auto,q_auto/`
-  if (!url.startsWith(marker)) return url
+  const match = HEADSHOT.exec(url)
+  const prefix = match?.[1]
+  const asset = match?.[2]
+  if (prefix === undefined || asset === undefined) return url
+
   const width = Math.round(cssPixels * MAX_DPR)
-  return `${NFL_IMAGES}f_auto,q_auto,w_${width}/${url.slice(marker.length)}`
+  return `${prefix}f_auto,q_auto,w_${width}/${asset}`
 }

@@ -40,7 +40,7 @@ const DOWN_NAMES = ['', '1st', '2nd', '3rd', '4th']
  * "3rd & 7", or null when the play has no down.
  *
  * Kickoffs, extra points and the like carry no down, and the ETL omits the
- * field rather than inventing one — 2,274 key plays across the six seasons have
+ * field rather than inventing one — 2,276 key plays across the six seasons have
  * no down. Callers drop the line entirely rather than print a placeholder.
  */
 export function downDistance(play: GamePlay): string | null {

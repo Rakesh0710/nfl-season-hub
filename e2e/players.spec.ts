@@ -60,7 +60,18 @@ test('a search that matches nobody offers a way back', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /All 2,?\d+ players/ })).toBeVisible()
 })
 
-test('result thumbnails are sized, never the stored multi-megabyte original', async ({ page }) => {
+/**
+ * The default listing, not a narrow search.
+ *
+ * This test used to load `/players?q=allen`, and passed while the unfiltered
+ * page shipped 775 KB of headshots: 55 of the 2,269 stored URLs use a delivery
+ * type `headshotAt` did not match, and went down the wire at their stored size
+ * — 3.8 MB in A.J. Brown's case. Sixty faces the visitor did not ask for is
+ * where an image bug is worth catching.
+ */
+test('every thumbnail on the default listing is sized, not the stored original', async ({
+  page,
+}) => {
   const sizes: number[] = []
   page.on('response', async (r) => {
     if (!r.url().includes('static.www.nfl.com')) return
@@ -68,15 +79,49 @@ test('result thumbnails are sized, never the stored multi-megabyte original', as
     sizes.push(Number((await r.allHeaders())['content-length'] ?? 0))
   })
 
-  await page.goto('/players?q=allen', { waitUntil: 'networkidle' })
-  expect(sizes.length).toBeGreaterThan(0)
-  expect(Math.max(...sizes)).toBeLessThan(100_000)
+  await page.goto('/players', { waitUntil: 'networkidle' })
+  expect(sizes.length).toBeGreaterThan(10)
+  expect(Math.max(...sizes), 'a 36px thumbnail is a few KB').toBeLessThan(30_000)
+  expect(
+    sizes.reduce((a, b) => a + b, 0),
+    'the whole listing',
+  ).toBeLessThan(400_000)
 })
 
-test('the search is operable by keyboard alone', async ({ page }) => {
+test('a private-delivery headshot is resized too, not served at 3.8 MB', async ({ page }) => {
+  const sizes: number[] = []
+  page.on('response', async (r) => {
+    if (r.url().includes('static.www.nfl.com')) {
+      sizes.push(Number((await r.allHeaders())['content-length'] ?? 0))
+    }
+  })
+
+  // A.J. Brown: stored under /image/private/, which the first version of
+  // `headshotAt` passed through untouched.
+  await page.goto('/player/00-0035676', { waitUntil: 'networkidle' })
+  await expect(page.getByRole('heading', { level: 1, name: 'A.J. Brown' })).toBeVisible()
+  expect(sizes.length).toBeGreaterThan(0)
+  expect(Math.max(...sizes)).toBeLessThan(50_000)
+})
+
+/**
+ * Also the guard on the dropped-keystroke bug, and the only one there can be.
+ *
+ * The box used to take its value from the query string; `setSearchParams` is a
+ * navigation, so React re-rendered it with a stale value between keypresses
+ * and typing "garrett" left "t" in it. jsdom cannot reproduce that — every
+ * update flushes inside `act`, so the stale render never happens — which is
+ * why this assertion lives out here on real keys rather than in
+ * `PlayersPage.test.tsx`.
+ */
+test('the search is operable by keyboard alone, and keeps every key pressed', async ({ page }) => {
   await page.goto('/players')
   await page.getByLabel('Search').focus()
   await page.keyboard.type('garrett')
+
+  await expect(page.getByLabel('Search')).toHaveValue('garrett')
+  await expect.poll(() => page.url()).toContain('q=garrett')
+
   await page.keyboard.press('Tab')
   await expect(page.getByLabel('Team')).toBeFocused()
   await expect(page.locator('a[href^="/player/"]').first()).toContainText('Garrett')
