@@ -230,6 +230,17 @@ export interface PlayerWeek {
   stats: PlayerStatLine
 }
 
+/** One entry in `players-index.json` — enough to search on and to show a result. */
+export interface PlayerSummary {
+  id: string
+  name: string
+  position: string
+  team: string
+  headshot?: string
+  /** Career games with a recorded stat line; the search ranks namesakes by it. */
+  games: number
+}
+
 /**
  * `player/<id>.json` — one per player with recorded production.
  *

@@ -14,6 +14,7 @@ const TeamPage = lazy(() => import('@/pages/TeamPage'))
 const GamePage = lazy(() => import('@/pages/GamePage'))
 const ComparePage = lazy(() => import('@/pages/ComparePage'))
 const PlayerPage = lazy(() => import('@/pages/PlayerPage'))
+const PlayersPage = lazy(() => import('@/pages/PlayersPage'))
 
 function NotFound() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="team/:id" element={<TeamPage />} />
         <Route path="game/:id" element={<GamePage />} />
         <Route path="compare" element={<ComparePage />} />
+        <Route path="players" element={<PlayersPage />} />
         <Route path="player/:id" element={<PlayerPage />} />
         <Route path="*" element={<NotFound />} />
       </Route>

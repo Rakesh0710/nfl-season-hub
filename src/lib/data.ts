@@ -10,11 +10,20 @@ import {
   parseGame,
   parseMeta,
   parsePlayer,
+  parsePlayersIndex,
   parseGamesIndex,
   parseTeam,
   parseTeamsIndex,
 } from '@/lib/contract'
-import type { Game, GameSummary, Meta, PlayerProfile, Team, TeamSummary } from '@/types/nfl'
+import type {
+  Game,
+  GameSummary,
+  Meta,
+  PlayerProfile,
+  PlayerSummary,
+  Team,
+  TeamSummary,
+} from '@/types/nfl'
 
 /** Root of the generated data, honouring Vite's base path. */
 const DATA_ROOT = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/data`
@@ -155,6 +164,17 @@ export function getTeam(id: string): Promise<Team> {
  */
 export function getGamesIndex(): Promise<GameSummary[]> {
   return request('games-index.json', parseGamesIndex)
+}
+
+/**
+ * Every player with a profile, for the search.
+ *
+ * Fetched only by `/players`. It carries headshots, which doubles it from 32 KB
+ * to 71 KB gzipped — paid because a list of 2,274 names is scanned by face, and
+ * the thumbnails themselves load lazily so only visible rows fetch one.
+ */
+export function getPlayersIndex(): Promise<PlayerSummary[]> {
+  return request('players-index.json', parsePlayersIndex)
 }
 
 /** One player's bio and career, for players the dataset records production for. */

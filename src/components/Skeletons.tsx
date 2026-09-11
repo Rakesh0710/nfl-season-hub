@@ -175,3 +175,25 @@ export function PlayerSkeleton() {
     </Shell>
   )
 }
+
+export function PlayersSkeleton() {
+  return (
+    <Shell label="Loading the players">
+      <Bar className="h-8 w-32" />
+      <Bar className="mt-3 h-4 w-full max-w-lg" />
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <Bar className="h-10 flex-1" />
+        <Bar className="h-10 sm:w-40" />
+        <Bar className="h-10 sm:w-40" />
+      </div>
+      <Bar className="mt-4 h-4 w-48" />
+      <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 12 }, (_, i) => (
+          <li key={i}>
+            <Bar className="h-[62px]" />
+          </li>
+        ))}
+      </ul>
+    </Shell>
+  )
+}

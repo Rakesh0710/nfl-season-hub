@@ -39,9 +39,9 @@ then plays the game back to them.
   timeline, a scrubber to drag, and a context box that always says where the game stands.
 - **Compare** — any two teams on one shared scale, offense and defense, with every game they have
   played since 2020 and the series record, each meeting linking to its replay.
-- **Player pages** — bio, headshot, season stats, a week-by-week trend that opens each game's
-  replay, and a season-by-season career table, for the 2,274 players the dataset records
-  production for.
+- **Players** — search 2,274 profiles by name, team or position, then a page with bio, headshot,
+  season stats, a week-by-week trend that opens each game's replay, and a season-by-season career
+  table.
 
 ## Demo
 
@@ -119,7 +119,7 @@ of football happens.
 
 ### Routing and data access
 
-Five routes — `/`, `/team/:id`, `/game/:id`, `/compare`, `/player/:id` — inside one shared layout, each page a
+Six routes — `/`, `/team/:id`, `/game/:id`, `/compare`, `/players`, `/player/:id` — inside one shared layout, each page a
 lazy chunk, so a league visitor never downloads the replay engine and a comparison downloads
 neither the replay engine nor the motion runtime.
 
@@ -156,7 +156,7 @@ preview` reads no `vercel.json` — and was only caught by curling the deploymen
 
 ## Data model
 
-Six file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
+Seven file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
 
 | File                  | Count | Size (raw / gzip)    | Contents                                                             |
 | --------------------- | ----: | -------------------- | -------------------------------------------------------------------- |
@@ -166,6 +166,7 @@ Six file shapes, mirrored exactly by [src/types/nfl.ts](src/types/nfl.ts):
 | `team/<ID>.json`      |    32 | 37 KB / 6.0 KB       | roster, depth chart, draft class, splits, ~105 games                 |
 | `game/<GAME_ID>.json` | 1,695 | 45.9 KB / **6.8 KB** | every play: clock, score, down, description, win prob                |
 | `player/<ID>.json`    | 2,274 | 1.4 KB / 0.5 KB      | bio, headshot, career seasons, and the displayed season week by week |
+| `players-index.json`  |     1 | 370 KB / 69 KB       | the search index: name, position, team, headshot, career games       |
 
 A game averages 6.8 KB over the wire, which is why a replay can load on demand with no backend.
 
@@ -311,8 +312,8 @@ any other origin passes through untouched.
 ## Testing
 
 ```
-317 unit and component tests   18 files   Vitest + React Testing Library
- 23 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
+337 unit and component tests   19 files   Vitest + React Testing Library
+ 30 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
 ```
 
 The tests are aimed at behaviour that could plausibly break, not at a coverage number.
@@ -352,7 +353,7 @@ for.
 
 | Job      | Steps                                                                                     |
 | -------- | ----------------------------------------------------------------------------------------- |
-| `verify` | `npm ci` → typecheck → lint → format check → 317 tests → production build → bundle report |
+| `verify` | `npm ci` → typecheck → lint → format check → 337 tests → production build → bundle report |
 | `data`   | `etl/validate.py` against the committed JSON (stdlib only; no ETL run needed)             |
 | `e2e`    | Playwright against the built app, report uploaded as an artifact                          |
 
@@ -499,7 +500,7 @@ npm run dev            # http://localhost:5173
 npm run typecheck      # tsc -b, four projects: app, node, tests, e2e
 npm run lint           # oxlint
 npm run format         # prettier --write .
-npm test               # Vitest, 317 tests
+npm test               # Vitest, 337 tests
 npm run test:coverage  # with a v8 coverage report
 npm run e2e            # Playwright (builds and serves the app itself)
 npm run build          # typecheck + production build
@@ -517,14 +518,27 @@ nflverse.
 ### Player pages, and who does not get one
 
 `player/<id>.json` exists for players the dataset records production for — 2,274 of the 3,135 on a
-2025 roster. The other 861 have no stat row in any season, 289 of them offensive linemen, whose
-contribution nflverse simply does not measure. A page for them would be their roster row with a
+2025 roster. The other 863 have no stat row in any season — 346 of the 550 offensive linemen
+among them, because nflverse records a statistic for a lineman only when he catches a pass or
+recovers a fumble. The remaining 204 linemen do have pages, which is why the code says "players
+with production" and never "skip the linemen". A page for them would be their roster row with a
 photograph on it, so they get neither a page nor a link, and the roster carries `hasProfile` to
 say which names lead somewhere.
 
 Which numbers a page shows is decided by which numbers exist, never by the position in the file.
 Mahomes' 2025 line contains one tackle and one reception; a page that branched on "quarterback"
 would have hidden both, and would have been wrong for every two-way player in the league.
+
+**Finding them.** The profiles shipped before a way in did, reachable only by opening a team and
+scrolling to its fourth section — two thousand pages behind a path nobody would guess. `/players`
+is the way in: type a name and filter by team or position, all in the browser against a 69 KB
+index. Ranking is by surname prefix first and then by career games played, because two players
+share a surname often enough to matter and "jefferson" was returning Jermar above Justin.
+
+The search box keeps its own state rather than reading the query string. Driving a text input from
+the URL looks tidy and drops characters — `setSearchParams` is a navigation, so a fast typist's
+keystrokes each read a filter from a render that has not happened yet. Typing "garrett" left "t"
+in the box. The two selects are still URL-driven; one change per interaction cannot race itself.
 
 **Headshots were the surprise.** nflverse points at the NFL's Cloudinary CDN, where the stored
 images are **3–6 MB PNGs** — one headshot is larger than every script, stylesheet and data file

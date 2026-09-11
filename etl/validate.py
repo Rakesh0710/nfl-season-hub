@@ -433,6 +433,22 @@ def main() -> int:
             if tf.stem not in (g.get("home"), g.get("away")):
                 fail(f"{where}: game {g.get('gameId')!r} does not involve this team")
 
+    # ---------- players index ----------
+    players_index = load(data / "players-index.json")
+    index_ids = set()
+    if not isinstance(players_index, list):
+        fail("players-index.json: expected an array")
+    else:
+        for entry in players_index:
+            where = f"players-index[{entry.get('id')}]"
+            check_shape(where, entry, {
+                "id": (str, True), "name": (str, True), "position": (str, True),
+                "team": (str, True), "games": (int, True), "headshot": (str, False),
+            })
+            if entry.get("games", 0) < 1:
+                fail(f"{where}: games {entry.get('games')!r} — an indexed player has played")
+            index_ids.add(entry.get("id"))
+
     # ---------- player layer ----------
     # Every profile the rosters advertise must exist, and every profile must
     # earn its page. A file with no recorded production would be the roster row
@@ -452,6 +468,13 @@ def main() -> int:
 
     for pid in sorted(advertised - player_ids):
         fail(f"roster advertises a profile for {pid!r} but player/{pid}.json does not exist")
+
+    # The search index and the pages behind it have to be the same set, or the
+    # search offers results that 404 or hides pages nothing links to.
+    for pid in sorted(index_ids - player_ids):
+        fail(f"players-index lists {pid!r} but player/{pid}.json does not exist")
+    for pid in sorted(player_ids - index_ids):
+        fail(f"player/{pid}.json exists but players-index does not list it")
 
     for pf in player_files:
         where = f"player/{pf.stem}"
@@ -490,7 +513,7 @@ def main() -> int:
 
     print(
         f"\nOK — 32 teams, {len(game_files)} games, {len(games_index)} indexed, "
-        f"{len(player_files)} players. "
+        f"{len(player_files)} players, {len(index_ids)} indexed. "
         "All checks pass; data matches the TypeScript contract."
     )
     return 0

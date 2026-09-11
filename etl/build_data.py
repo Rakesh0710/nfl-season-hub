@@ -584,7 +584,7 @@ def build_players(
     display: int,
     roster_rows: pl.DataFrame,
     out: Path,
-) -> tuple[int, int, set[str]]:
+) -> tuple[list[dict], int, set[str]]:
     """
     One file per player who has actually done something measurable.
 
@@ -598,7 +598,7 @@ def build_players(
     columns = set(stats.columns)
     by_player = dict(stats.partition_by("player_id", as_dict=True, include_key=True))
 
-    written = 0
+    index: list[dict] = []
     total_bytes = 0
     profiled: set[str] = set()
 
@@ -671,9 +671,23 @@ def build_players(
 
         total_bytes += write_json(out / "player" / f"{pid}.json", player)
         profiled.add(pid)
-        written += 1
 
-    return written, total_bytes, profiled
+        # The search index. Name, position and team are what a person types or
+        # filters on; the headshot is there so a result list can be scanned by
+        # face, which is how anyone actually finds a player they half-remember.
+        entry = {"id": pid, "name": player["name"], "position": player["position"],
+                 "team": player["team"],
+                 # Career games with a stat line. The search uses it to break a
+                 # tie between namesakes: with two Jeffersons, the one with six
+                 # seasons behind him is the one being looked for far more
+                 # often than the one with three quiet games.
+                 "games": sum(s["games"] for s in history)}
+        if player.get("headshot"):
+            entry["headshot"] = player["headshot"]
+        index.append(entry)
+
+    index.sort(key=lambda e: e["name"])
+    return index, total_bytes, profiled
 
 
 def season_states(schedules: pl.DataFrame, seasons: list[int]) -> list[dict]:
@@ -856,9 +870,15 @@ def main() -> None:
         })
 
     # ---- player layer ----
-    player_count, player_bytes, profiled = build_players(seasons_for_players, current, roster_rows, out)
+    players_index, player_bytes, profiled = build_players(
+        seasons_for_players, current, roster_rows, out
+    )
     total_bytes += player_bytes
-    print(f"  {player_count} player files ({len(roster_rows.unique(subset=['gsis_id']))} rostered)")
+    total_bytes += write_json(out / "players-index.json", players_index)
+    print(
+        f"  {len(players_index)} player files "
+        f"({len(roster_rows.unique(subset=['gsis_id']))} rostered)"
+    )
 
     # A roster row says whether there is a page behind the name, so the UI can
     # link the ones that lead somewhere and leave the rest as plain text.

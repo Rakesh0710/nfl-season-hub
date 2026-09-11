@@ -11,6 +11,7 @@ import {
   GameSkeleton,
   LeagueSkeleton,
   PlayerSkeleton,
+  PlayersSkeleton,
   TeamSkeleton,
 } from '@/components/Skeletons'
 
@@ -42,6 +43,9 @@ export default function Layout() {
           <nav aria-label="Main" className="flex items-center gap-1">
             <NavLink to="/" end className={navClass}>
               League
+            </NavLink>
+            <NavLink to="/players" className={navClass}>
+              Players
             </NavLink>
             <NavLink to="/compare" className={navClass}>
               Compare
@@ -122,6 +126,7 @@ function RouteSkeleton() {
   const { pathname, search } = useLocation()
   if (pathname.startsWith('/game/')) return <GameSkeleton />
   if (pathname.startsWith('/team/')) return <TeamSkeleton />
+  if (pathname.startsWith('/players')) return <PlayersSkeleton />
   if (pathname.startsWith('/player/')) return <PlayerSkeleton />
   if (pathname.startsWith('/compare')) {
     // A link with both teams in it is going to render a full comparison, so

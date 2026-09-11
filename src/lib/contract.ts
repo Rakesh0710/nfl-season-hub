@@ -25,6 +25,7 @@ import type {
   Meta,
   PlayerProfile,
   PlayerSeason,
+  PlayerSummary,
   PlayerStatLine,
   PlayerWeek,
   SeasonState,
@@ -368,6 +369,20 @@ export const parsePlayer: Parser<PlayerProfile> = (value, path) => {
     weeks: field(o, 'weeks', arrayOf(playerWeek), path),
   }
 }
+
+const playerSummary: Parser<PlayerSummary> = (value, path) => {
+  const o = object(value, path)
+  return {
+    id: field(o, 'id', string, path),
+    name: field(o, 'name', string, path),
+    position: field(o, 'position', string, path),
+    team: field(o, 'team', string, path),
+    headshot: field(o, 'headshot', optional(string), path),
+    games: field(o, 'games', number, path),
+  }
+}
+
+export const parsePlayersIndex: Parser<PlayerSummary[]> = arrayOf(playerSummary)
 
 export const parseTeamsIndex: Parser<TeamSummary[]> = arrayOf(teamSummary)
 export const parseGamesIndex: Parser<GameSummary[]> = arrayOf(gameSummary)
