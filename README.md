@@ -195,6 +195,21 @@ who has played every season in the dataset, is the outlier at 3.7 KB.
 The repository grew from 90 MB to 99 MB, which is the part that actually costs something — though
 79 MB of it was replays before any of this.
 
+**The season has to survive leaving the page.** League -> Team -> Game -> Replay is the spine of
+this site, and a season that only existed on the team page broke it on the way back: a 2020 replay's
+breadcrumb dropped a visitor on this year's Chiefs. Every link into a team page now carries the
+season it means — the replay's breadcrumb from the game's own season, a career row from the year in
+that row, the dashboard card from the season on screen.
+
+**The control outlives the season it selects.** Changing season refetches, so a control rendered
+inside the loaded content unmounted while the next file arrived — and pressing a tab with the
+keyboard dropped focus to `<body>`, leaving a visitor to tab in again from the top of the document.
+The breadcrumb and the season control are now rendered from `meta.json`, which does not change
+between seasons, and only the body below them swaps for a skeleton. Both the control and the fetch
+behind it resolve the season through one `resolveSeason`, so the pressed tab cannot disagree with
+the file on screen. Its accessible name is "Season" rather than the team's, because focus now stays
+on that button while the name would have resolved from "KC" to "Kansas City Chiefs" underneath it.
+
 `standings.json` is a new file rather than three more fields on `teams-index.json`. The dashboard's
 whole appeal is that sorting and filtering never touch the network, and a season switch had to
 work the same way, which means holding every season at once — 2.6 KB for all 192 rows. Putting
@@ -339,8 +354,8 @@ any other origin passes through untouched.
 ## Testing
 
 ```
-381 unit and component tests   20 files   Vitest + React Testing Library
- 37 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
+389 unit and component tests   20 files   Vitest + React Testing Library
+ 40 end-to-end specs           ×2 devices  Playwright (desktop Chrome, Pixel 5)
 ```
 
 The tests are aimed at behaviour that could plausibly break, not at a coverage number.
@@ -360,6 +375,7 @@ The tests are aimed at behaviour that could plausibly break, not at a coverage n
 | Components               | loading, error, retry, empty and not-found states; keyboard operation of the whole transport                                                                                                                                                                                           |
 | Player search            | ranking tiers and the namesake tiebreak against the real index; accented names typed plainly; the URL restoring box, filters and results; both headshot delivery types resized                                                                                                         |
 | Six seasons              | the standings join drops a team with no row for that year rather than showing it 0-0; a season only reaches the URL when it is not the default; the team page fetches the season it was asked for and falls back for one with no layer; the dashboard changes season without a request |
+| Season continuity        | focus stays on the tab that was pressed across the refetch, and the control stays usable while it is loading; a replay's breadcrumb and a career row both carry the season they belong to; `resolveSeason` is one rule so the pressed tab cannot disagree with the file                |
 
 Two examples of tests that exist because the bug happened:
 
@@ -382,7 +398,7 @@ for.
 
 | Job      | Steps                                                                                     |
 | -------- | ----------------------------------------------------------------------------------------- |
-| `verify` | `npm ci` → typecheck → lint → format check → 381 tests → production build → bundle report |
+| `verify` | `npm ci` → typecheck → lint → format check → 389 tests → production build → bundle report |
 | `data`   | `etl/validate.py` against the committed JSON (stdlib only; no ETL run needed)             |
 | `e2e`    | Playwright against the built app, report uploaded as an artifact                          |
 
@@ -512,6 +528,11 @@ assert the type of.
   threshold excuses. CLS is now 0 on every route and form.
 - **Third-party cache headers, ~48 KiB.** The logos are served by ESPN's CDN with their cache
   policy, not ours.
+- **The comparison is of the displayed season only.** Both sides come from `meta.displaySeason`, so
+  "Compare KC" from a 2020 team page opens a 2025 comparison. Nothing on the button claims
+  otherwise, and `getTeamSeason` already takes a season — but comparing two teams in a chosen year
+  needs its own control on that page to avoid being invisible state in a URL, which is a feature
+  rather than a fix.
 
 ---
 
@@ -554,7 +575,7 @@ npm run dev            # http://localhost:5173
 npm run typecheck      # tsc -b, four projects: app, node, tests, e2e
 npm run lint           # oxlint
 npm run format         # prettier --write .
-npm test               # Vitest, 381 tests
+npm test               # Vitest, 389 tests
 npm run test:coverage  # with a v8 coverage report
 npm run e2e            # Playwright (builds and serves the app itself)
 npm run build          # typecheck + production build

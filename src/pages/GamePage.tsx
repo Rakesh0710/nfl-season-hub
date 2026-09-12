@@ -35,7 +35,9 @@ export default function GamePage() {
           League
         </Link>
         <span aria-hidden> / </span>
-        <Link to={`/team/${game.home.id}`} className="hover:text-neutral-300">
+        {/* Carries the season, so the way back from a 2020 replay is the 2020
+            team page rather than this year's. */}
+        <Link to={`/team/${game.home.id}?season=${game.season}`} className="hover:text-neutral-300">
           {game.home.id}
         </Link>
         <span aria-hidden> / </span>

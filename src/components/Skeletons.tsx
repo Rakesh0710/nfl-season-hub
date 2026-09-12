@@ -63,11 +63,36 @@ export function LeagueSkeleton() {
   )
 }
 
+/**
+ * The whole team route, for the moment before its chunk has even loaded.
+ *
+ * Reserves the breadcrumb and the season control as well as the body. Once the
+ * page component is mounted those two are real and stay mounted across a
+ * season change, so the page uses `TeamBodySkeleton` instead and this shape is
+ * only ever seen once.
+ */
 export function TeamSkeleton() {
   return (
     <Shell label="Loading the team">
       <Bar className="h-4 w-40" />
       <Bar className="mt-8 h-[42px] w-full max-w-md rounded-lg" />
+      <TeamBody />
+    </Shell>
+  )
+}
+
+/** Everything below the breadcrumb and the season control. */
+export function TeamBodySkeleton() {
+  return (
+    <Shell label="Loading the season">
+      <TeamBody />
+    </Shell>
+  )
+}
+
+function TeamBody() {
+  return (
+    <>
       <div className="mt-8 grid gap-5 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-center">
         <div className="flex items-center gap-4">
           <Bar className="h-16 w-16 rounded-full" />
@@ -83,7 +108,7 @@ export function TeamSkeleton() {
         <Bar className="h-52 w-full rounded-xl" />
         <Bar className="h-64 w-full rounded-xl" />
       </div>
-    </Shell>
+    </>
   )
 }
 

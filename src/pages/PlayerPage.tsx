@@ -84,7 +84,7 @@ export default function PlayerPage() {
           seasons={[...seasons].reverse()}
           value={current?.season ?? null}
           onChange={(next) => setParams({ season: String(next) }, { replace: true })}
-          label={`${player.name} season`}
+          label="Season"
         />
       )}
 
@@ -291,7 +291,7 @@ function Career({ player, chart }: { player: PlayerProfile; chart: StatGroup | u
               </th>
               <td className="px-3 py-2 text-neutral-400">
                 <Link
-                  to={`/team/${season.team}`}
+                  to={`/team/${season.team}?season=${season.season}`}
                   className="hover:text-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
                 >
                   {season.team}

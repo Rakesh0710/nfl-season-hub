@@ -175,11 +175,16 @@ describe('a loaded comparison', () => {
 
   it('names both teams and links each to its own page', async () => {
     mount('/compare?a=KC&b=BUF')
+    // The season travels with the link: a comparison is of one year, and the
+    // team page it opens should be the same one.
     expect(await screen.findByRole('link', { name: 'Kansas City Chiefs' })).toHaveAttribute(
       'href',
-      '/team/KC',
+      '/team/KC?season=2025',
     )
-    expect(screen.getByRole('link', { name: 'Buffalo Bills' })).toHaveAttribute('href', '/team/BUF')
+    expect(screen.getByRole('link', { name: 'Buffalo Bills' })).toHaveAttribute(
+      'href',
+      '/team/BUF?season=2025',
+    )
   })
 
   it('marks the better offense as leading', async () => {

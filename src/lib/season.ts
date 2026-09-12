@@ -99,3 +99,30 @@ export function seasonRange(meta: Meta): string {
   const last = Math.max(...years)
   return first === last ? `${first}` : `${first}\u2013${last}`
 }
+
+/**
+ * The seasons a team page may offer, newest first.
+ *
+ * `meta.teamSeasons` ascends, because that is the order the ETL writes it in
+ * and the order the validator checks; a control reads newest first.
+ */
+export function teamSeasonsOf(meta: Meta): number[] {
+  return [...meta.teamSeasons].sort((a, b) => b - a)
+}
+
+/**
+ * Which season a `?season=` parameter actually means.
+ *
+ * One function rather than two, because the team page resolves this twice —
+ * once to render the control and once inside the fetch that answers it — and
+ * two copies of the rule are two chances for the pressed tab to disagree with
+ * the file on screen.
+ *
+ * Anything the dataset has no team layer for falls back to the displayed
+ * season: a hand-edited URL, a bookmark from before a refresh, or a season
+ * still too young to describe.
+ */
+export function resolveSeason(meta: Meta, asked: string | null): number {
+  const wanted = Number(asked)
+  return meta.teamSeasons.includes(wanted) ? wanted : meta.displaySeason
+}

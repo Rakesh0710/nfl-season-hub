@@ -7,7 +7,9 @@ import {
   needsCoverageNotice,
   refreshedAgo,
   seasonInProgress,
+  resolveSeason,
   stateOf,
+  teamSeasonsOf,
 } from '@/lib/season'
 import type { Meta } from '@/types/nfl'
 
@@ -157,5 +159,33 @@ describe('the generated meta.json', () => {
     // Every shipped game is a played game; there cannot be more of them than
     // the schedule says were played.
     expect(shipped).toBeLessThanOrEqual(state.played)
+  })
+})
+
+describe('resolveSeason', () => {
+  // One rule, shared by the control and the fetch behind it. Two copies would
+  // be two chances for the pressed tab to disagree with the file on screen.
+  const meta = makeMeta({ teamSeasons: [2024, 2025], displaySeason: 2025 })
+
+  it('takes a season the dataset has a layer for', () => {
+    expect(resolveSeason(meta, '2024')).toBe(2024)
+  })
+
+  it('falls back to the displayed season for anything else', () => {
+    for (const asked of [null, '', '2026', '1999', 'banana', 'NaN', '2024.5']) {
+      expect(resolveSeason(meta, asked), String(asked)).toBe(2025)
+    }
+  })
+})
+
+describe('teamSeasonsOf', () => {
+  it('reverses the ascending list the ETL writes, for a newest-first control', () => {
+    expect(teamSeasonsOf(makeMeta({ teamSeasons: [2020, 2021, 2022] }))).toEqual([2022, 2021, 2020])
+  })
+
+  it('does not mutate the meta it was handed', () => {
+    const meta = makeMeta({ teamSeasons: [2020, 2021] })
+    teamSeasonsOf(meta)
+    expect(meta.teamSeasons).toEqual([2020, 2021])
   })
 })

@@ -184,7 +184,7 @@ test('a team page reaches every season of replays, not just the current one', as
   await page.goto('/team/KC')
   await expect(page.getByRole('heading', { level: 1, name: /Chiefs/ })).toBeVisible()
 
-  const seasons = page.getByRole('group', { name: /Chiefs season/i })
+  const seasons = page.getByRole('group', { name: 'Season' })
   await expect(seasons).toBeVisible()
   const labels = await seasons.getByRole('button').allTextContents()
   expect(labels.length).toBeGreaterThanOrEqual(6)
@@ -210,7 +210,7 @@ test('a team page reaches every season of replays, not just the current one', as
 test('a chosen season survives a reload, because it is in the URL', async ({ page }) => {
   await page.goto('/team/PHI?season=2021')
   await expect(page.getByRole('heading', { level: 1, name: /Eagles/ })).toBeVisible()
-  const seasons = page.getByRole('group', { name: /Eagles season/i })
+  const seasons = page.getByRole('group', { name: 'Season' })
   await expect(seasons.getByRole('button', { name: '2021' })).toHaveAttribute(
     'aria-pressed',
     'true',

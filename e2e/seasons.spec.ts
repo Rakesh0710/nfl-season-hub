@@ -112,3 +112,53 @@ test('a player page charts one season at a time across a career', async ({ page 
   await expect(page.getByRole('heading', { name: 'Season by season' })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: '2020' })).toBeVisible()
 })
+
+test('the season survives a trip into a replay and back', async ({ page }) => {
+  // League -> Team -> Game -> Replay is the spine of this site, and the way
+  // back has to land where you came from. The breadcrumb used to drop a
+  // visitor on this year's team page from a 2020 replay.
+  await page.goto('/team/KC?season=2020')
+  await expect(page.getByRole('heading', { level: 1, name: /Chiefs/ })).toBeVisible()
+
+  await page.locator('a[href^="/game/2020_"]').first().click()
+  await expect(page).toHaveURL(/\/game\/2020_/)
+
+  await page
+    .getByRole('navigation', { name: 'Breadcrumb' })
+    .getByRole('link', { name: 'KC' })
+    .click()
+
+  await expect(page).toHaveURL(/season=2020/)
+  await expect(
+    page.getByRole('group', { name: /season/i }).getByRole('button', { name: '2020' }),
+  ).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('the season control keeps focus when it is used by keyboard', async ({ page }) => {
+  await page.goto('/team/KC')
+  const seasons = page.getByRole('group', { name: /season/i })
+  await expect(seasons).toBeVisible()
+
+  await seasons.getByRole('button', { name: '2020' }).focus()
+  await page.keyboard.press('Enter')
+
+  await expect(seasons.getByRole('button', { name: '2020' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  // The page refetches, so the control has to outlive the content it selects.
+  await expect(seasons.getByRole('button', { name: '2020' })).toBeFocused()
+})
+
+test('a career row opens that team in that year', async ({ page }) => {
+  await page.goto('/player/00-0033873')
+  await expect(page.getByRole('heading', { name: 'Season by season' })).toBeVisible()
+
+  const row = page.getByRole('row').filter({ hasText: '2021' }).first()
+  await row.getByRole('link').click()
+
+  await expect(page).toHaveURL(/\/team\/\w+\?season=2021/)
+  await expect(
+    page.getByRole('group', { name: /season/i }).getByRole('button', { name: '2021' }),
+  ).toHaveAttribute('aria-pressed', 'true')
+})

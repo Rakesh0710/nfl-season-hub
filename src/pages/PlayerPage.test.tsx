@@ -222,7 +222,7 @@ describe('choosing a season', () => {
   it('offers the seasons the player actually played, newest first', async () => {
     mockedPlayer.mockResolvedValue(twoSeasons())
     mount()
-    const tabs = await screen.findByRole('group', { name: /Patrick Mahomes season/i })
+    const tabs = await screen.findByRole('group', { name: 'Season' })
     expect(
       within(tabs)
         .getAllByRole('button')
@@ -274,6 +274,17 @@ describe('season by season', () => {
     const rows = screen.getAllByRole('row').slice(1) // drop the header
     expect(rows[0]).toHaveTextContent('2025')
     expect(rows[1]).toHaveTextContent('2024')
+  })
+
+  it('links each row to that team in that year, not to whoever they are now', async () => {
+    // The row knows both halves of the pair, so it can say "the 2024 Chiefs"
+    // rather than dropping the reader on this season's page.
+    mount()
+    await screen.findByRole('heading', { name: 'Season by season' })
+    const rows = screen.getAllByRole('row').slice(1)
+    const link = within(rows[0]!).getByRole('link')
+    expect(link).toHaveAttribute('href', '/team/KC?season=2025')
+    expect(within(rows[1]!).getByRole('link')).toHaveAttribute('href', '/team/KC?season=2024')
   })
 
   it('is left out for a player with one season', async () => {

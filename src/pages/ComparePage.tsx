@@ -209,7 +209,7 @@ function Identity({ team, color }: { team: TeamSeason; color: string }) {
       />
       <div className="min-w-0 flex-1">
         <Link
-          to={`/team/${team.id}`}
+          to={`/team/${team.id}?season=${team.season}`}
           className="text-sm font-semibold text-neutral-100 hover:text-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400"
         >
           {team.name}

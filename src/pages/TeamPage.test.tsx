@@ -194,7 +194,7 @@ describe('six seasons', () => {
 
   it('offers every season with a team layer, newest first', async () => {
     mount()
-    const tabs = await screen.findByRole('group', { name: /Kansas City Chiefs season/i })
+    const tabs = await screen.findByRole('group', { name: 'Season' })
     expect(
       within(tabs)
         .getAllByRole('button')
@@ -225,6 +225,35 @@ describe('six seasons', () => {
       'href',
       '/game/2020_01_KC_BUF',
     )
+  })
+
+  it('leaves focus on the tab that was pressed, rather than dropping it to the body', async () => {
+    // Changing season refetches, so a control rendered inside the loaded
+    // content unmounts while the next file arrives. It did, and pressing a tab
+    // with the keyboard dropped focus to <body>, leaving a keyboard visitor to
+    // tab in again from the top of the document.
+    const user = userEvent.setup()
+    mount()
+    const tabs = await screen.findByRole('group', { name: /season/i })
+    const target = within(tabs).getByRole('button', { name: '2020' })
+
+    target.focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(mockedTeam).toHaveBeenCalledWith('KC', 2020))
+    await screen.findByText('14-3')
+
+    expect(document.activeElement).toBe(within(tabs).getByRole('button', { name: '2020' }))
+  })
+
+  it('keeps the control usable while the next season is loading', async () => {
+    // The same property from the other side: a slow file must not take the
+    // means of choosing a different one off the screen.
+    mockedTeam.mockReturnValue(new Promise(() => {}))
+    mount('/team/KC?season=2021')
+    const tabs = await screen.findByRole('group', { name: /season/i })
+
+    expect(within(tabs).getAllByRole('button')).toHaveLength(6)
+    expect(screen.getByRole('status')).toHaveTextContent(/loading/i)
   })
 
   it('puts the season in the URL, so a past season is shareable', async () => {
